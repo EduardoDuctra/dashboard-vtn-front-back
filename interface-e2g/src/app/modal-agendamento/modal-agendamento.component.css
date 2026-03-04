@@ -1,0 +1,19 @@
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+mat-form-field {
+  width: 100%;
+}
+
+input[type='time'] {
+  height: 1.5em;
+}
+
+h2[mat-dialog-title] {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}

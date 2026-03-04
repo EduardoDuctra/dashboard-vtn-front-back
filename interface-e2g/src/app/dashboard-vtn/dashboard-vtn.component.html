@@ -1,0 +1,174 @@
+<div class="grid-container">
+  <h1 class="mat-h1">Concessionária - Virtual Top Node</h1>
+
+  <mat-grid-list cols="3" rowHeight="220px" gutterSize="8px">
+    <mat-grid-tile
+      *ngFor="let card of cards | async"
+      [colspan]="card.cols"
+      [rowspan]="card.rows"
+    >
+      <mat-card
+        class="dashboard-card"
+        [ngClass]="{
+          'card-status-ativo-reducao':
+            card.type === 'status' &&
+            statusAtivo &&
+            tipoEventoAtivo === 'limit_charge',
+          'card-status-ativo-injecao':
+            card.type === 'status' &&
+            statusAtivo &&
+            tipoEventoAtivo === 'inject',
+        }"
+      >
+        <mat-card-content class="dashboard-card-content">
+          <ng-container *ngIf="card.type === 'potencia' && statusAtivo">
+            <div class="card-centralizado">
+              <div class="potencia-linha">
+                <mat-icon class="material-symbols-outlined icon-potencia">
+                  ev_station
+                </mat-icon>
+                <h2>
+                  {{ (potenciaAtual ?? 0) / 1000 | number: '1.2-2' }}
+
+                  kW
+                </h2>
+              </div>
+              <h2 class="titulo">Potência</h2>
+            </div>
+          </ng-container>
+
+          <ng-container *ngIf="card.type === 'historico'">
+            <div
+              class="grafico-container"
+              [ngClass]="{
+                'layout-centro': !boolCardTabelaAgendamentos,
+                'layout-topo': boolCardTabelaAgendamentos,
+              }"
+            >
+              <ng-container *ngIf="!boolCardTabelaAgendamentos">
+                <app-grafico-historico
+                  [eventos]="eventos"
+                ></app-grafico-historico>
+              </ng-container>
+
+              <ng-container *ngIf="boolCardTabelaAgendamentos">
+                <button
+                  mat-icon-button
+                  color="warn"
+                  class="voltar-btn"
+                  (click)="boolCardTabelaAgendamentos = false"
+                >
+                  <mat-icon class="material-symbols-outlined">
+                    arrow_back_ios
+                  </mat-icon>
+                </button>
+
+                <app-tabela-agendamentos
+                  [eventos]="eventos"
+                  (atualizar)="getEventos()"
+                ></app-tabela-agendamentos>
+              </ng-container>
+            </div>
+          </ng-container>
+          <ng-container *ngIf="card.type === 'acao'">
+            <div class="acao-header">
+              <button
+                mat-icon-button
+                class="acao-menu-btn"
+                [matMenuTriggerFor]="menu"
+                aria-label="Toggle menu"
+                disableRipple
+              >
+                <mat-icon class="material-symbols-outlined">menu</mat-icon>
+              </button>
+
+              <mat-tab-group
+                class="acao-tabs"
+                (selectedIndexChange)="onTabChange($event)"
+              >
+                <mat-tab label="Controle de potência"></mat-tab>
+
+                <mat-tab label="Despacho"></mat-tab>
+              </mat-tab-group>
+            </div>
+
+            <form [formGroup]="formReducao" (ngSubmit)="enviarFormulario()">
+              <mat-form-field class="full-width" appearance="outline">
+                <mat-label>
+                  {{
+                    abaSelecionada === 0
+                      ? 'Potência desejada para redução (W)'
+                      : 'Potência desejada para despacho no modo de injeção'
+                  }}
+                </mat-label>
+                <input matInput type="number" formControlName="potencia" />
+              </mat-form-field>
+
+              <mat-form-field class="full-width" appearance="outline">
+                <mat-label>Tempo de redução (horas)</mat-label>
+                <input matInput type="number" formControlName="tempo" />
+              </mat-form-field>
+
+              <div class="botoes-container">
+                <button
+                  mat-raised-button
+                  color="warn"
+                  type="submit"
+                  [disabled]="statusAtivo"
+                >
+                  Solicitar
+                </button>
+
+                <button
+                  mat-raised-button
+                  color="warn"
+                  type="button"
+                  (click)="abrirModalAgendar()"
+                >
+                  Agendar
+                </button>
+              </div>
+            </form>
+
+            <mat-menu #menu="matMenu" panelClass="menu-acao" xPosition="before">
+              <button mat-menu-item (click)="abrirTabelaAgendamentos()">
+                Agendamentos pendentes
+              </button>
+
+              <button
+                mat-menu-item
+                (click)="deletarEventoAtual()"
+                *ngIf="eventoAtivo && ambienteDesenvolvimento"
+              >
+                Cancelar evento atual (somente desenvolvimento)
+              </button>
+            </mat-menu>
+          </ng-container>
+          <ng-container *ngIf="card.type === 'status'">
+            <div class="card-centralizado">
+              <div class="status-linha">
+                <mat-icon class="material-symbols-outlined icon-potencia">
+                  change_circle
+                </mat-icon>
+
+                <h2 class="titulo">
+                  <ng-container *ngIf="!statusAtivo">
+                    Status: aguardando solicitação
+                  </ng-container>
+
+                  <ng-container *ngIf="statusAtivo">
+                    Solicitação aceita com
+                    {{ (potenciaAtual ?? 0) / 1000 | number: '1.2-2' }}kW por
+                    {{ horasReducao }} horas
+                    <br />
+                    Potência ajustada até {{ dataFim | date: 'HH:mm' }}
+                  </ng-container>
+                </h2>
+              </div>
+            </div>
+          </ng-container>
+        </mat-card-content>
+      </mat-card>
+    </mat-grid-tile>
+  </mat-grid-list>
+</div>

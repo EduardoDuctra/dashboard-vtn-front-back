@@ -1,0 +1,38 @@
+:root {
+  --cor-injecao: #d32f2f;
+  --cor-reducao: #1976d2;
+  --cor-status-verde: #69b66c9e;
+  --cor-status-injecao: #b669699e;
+  --cor-branco: #ffffff;
+  --cor-cinza: #f3f3f3;
+}
+
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+}
+
+body {
+  background-color: var(--cor-cinza);
+}
+
+.mat-datepicker-content,
+.mat-calendar {
+  background: var(--cor-branco) !important;
+}
+
+.mat-calendar-body-cell {
+  background: var(--cor-branco) !important;
+}
+
+.mat-calendar-table {
+  background: var(--cor-branco) !important;
+}
+
+.mat-calendar-header {
+  background: var(--cor-branco) !important;
+}

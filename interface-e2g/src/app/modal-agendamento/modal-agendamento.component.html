@@ -1,0 +1,27 @@
+<h2 mat-dialog-title>Agendar Redução</h2>
+
+<div mat-dialog-content class="modal-content">
+  <form [formGroup]="form">
+    <mat-form-field appearance="outline">
+      <input
+        matInput
+        [matDatepicker]="picker"
+        formControlName="data"
+        inputFormat="DD/MM/YYYY"
+      />
+      <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+      <mat-datepicker #picker></mat-datepicker>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <input matInput type="time" formControlName="hora" />
+    </mat-form-field>
+  </form>
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-button (click)="cancelar()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="confirmar()">
+    Confirmar
+  </button>
+</div>
