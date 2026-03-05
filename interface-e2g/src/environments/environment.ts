@@ -1,7 +1,7 @@
 export const environment = {
   production: false,
 
-  apiUrl: 'http://localhost:5006/vtn',
+  apiUrl: 'http://localhost:8080/vtn',
 
   estacao: {
     potenciaMaximaInversor: 3000,

@@ -277,6 +277,8 @@ export class DashboardVtnComponent {
       porcentagemPotencia = 100;
     }
 
+    console.log('Porcentagem de potência disponível:', porcentagemPotencia);
+
     return porcentagemPotencia;
   }
 
