@@ -1,7 +1,7 @@
 export const environment = {
   production: true,
 
-  apiUrl: 'https://api-eduardo.ceesp.ufsm.br',
+  apiUrl: 'https://api-eduardo.ceesp.ufsm.br/vtn',
 
   estacao: {
     potenciaMaximaInversor: 3000,
