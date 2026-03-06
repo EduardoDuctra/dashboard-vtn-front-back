@@ -41,6 +41,7 @@ public class VtnController {
     }
 
 
+//    d
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletarEvento(@PathVariable String id){
         return ResponseEntity.ok(service.deletarEvento(id));
