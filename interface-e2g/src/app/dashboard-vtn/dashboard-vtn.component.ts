@@ -267,6 +267,7 @@ export class DashboardVtnComponent {
     }, tempoRestante);
   }
 
+
   calculoPotenciaDisponivel(potencia: number) {
     const potenciaMaximaEstacao =
       this.potenciaMaximaDescarga * this.quantidadeBaterias;
@@ -277,9 +278,8 @@ export class DashboardVtnComponent {
       porcentagemPotencia = 100;
     }
 
-    console.log('Porcentagem de potência disponível:', porcentagemPotencia);
-
     return porcentagemPotencia;
+
   }
 
   deletarEventoAtual() {
