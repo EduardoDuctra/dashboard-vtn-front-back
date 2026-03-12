@@ -74,7 +74,7 @@ export class DashboardVtnComponent {
   potenciaMaximaInversor = environment.estacao.potenciaMaximaInversor;
   potenciaAtual: number | null = null;
 
-  type = TipoEvento.LIMIT_CHARGE;
+  type = TipoEvento.limit_charge;
   abaSelecionada = 0;
 
   capacidadeBateria = environment.estacao.capacidadeBateria;
@@ -117,10 +117,10 @@ export class DashboardVtnComponent {
 
   onTabChange(index: number) {
     if (index === 1) {
-      this.type = TipoEvento.INJECT;
+      this.type = TipoEvento.inject;
       this.abaSelecionada = 1;
     } else {
-      this.type = TipoEvento.LIMIT_CHARGE;
+      this.type = TipoEvento.limit_charge;
       this.abaSelecionada = 0;
     }
   }
@@ -153,11 +153,13 @@ export class DashboardVtnComponent {
 
     let valorFinal: number;
 
-    if (this.type === TipoEvento.INJECT) {
-      valorFinal = this.calculoPotenciaDisponivel(valorDigitado);
-    } else {
-      valorFinal = this.potenciaExibida(valorDigitado);
-    }
+    // if (this.type === TipoEvento.inject) {
+    //   valorFinal = this.calculoPotenciaDisponivel(valorDigitado);
+    // } else {
+    //   valorFinal = this.potenciaExibida(valorDigitado);
+    // }
+
+    valorFinal = valorDigitado;
 
     const vtnDTO: VtnDTO = {
       type: this.type,
@@ -218,7 +220,7 @@ export class DashboardVtnComponent {
       this.tipoEventoAtivo = this.eventoAtivo.type;
       this.dataFim = new Date(this.eventoAtivo.endTime);
 
-      if (this.eventoAtivo.type === TipoEvento.INJECT) {
+      if (this.eventoAtivo.type === TipoEvento.inject) {
         this.potenciaAtual = this.calcularPotenciaReal(this.eventoAtivo.value);
       } else {
         this.potenciaAtual = this.potenciaExibida(this.eventoAtivo.value);
@@ -267,20 +269,18 @@ export class DashboardVtnComponent {
     }, tempoRestante);
   }
 
+  // calculoPotenciaDisponivel(potencia: number) {
+  //   const potenciaMaximaEstacao =
+  //     this.potenciaMaximaDescarga * this.quantidadeBaterias;
 
-  calculoPotenciaDisponivel(potencia: number) {
-    const potenciaMaximaEstacao =
-      this.potenciaMaximaDescarga * this.quantidadeBaterias;
+  //   let porcentagemPotencia = (potencia * 100) / potenciaMaximaEstacao;
 
-    let porcentagemPotencia = (potencia * 100) / potenciaMaximaEstacao;
+  //   if (porcentagemPotencia > 100) {
+  //     porcentagemPotencia = 100;
+  //   }
 
-    if (porcentagemPotencia > 100) {
-      porcentagemPotencia = 100;
-    }
-
-    return porcentagemPotencia;
-
-  }
+  //   return porcentagemPotencia;
+  // }
 
   deletarEventoAtual() {
     if (!this.eventoAtivo?.id) {

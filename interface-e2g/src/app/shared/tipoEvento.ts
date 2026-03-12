@@ -1,4 +1,4 @@
 export enum TipoEvento {
-  LIMIT_CHARGE = 'limit_charge',
-  INJECT = 'inject',
+  limit_charge = 'limit_charge',
+  inject = 'inject',
 }
