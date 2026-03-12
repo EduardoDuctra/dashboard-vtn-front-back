@@ -4,7 +4,9 @@ import com.micromobilidade.vtn.vtn.entity.EventoEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEventoEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEventoId;
-import com.micromobilidade.vtn.vtn.model.EventoDTOUFSM;
+import com.micromobilidade.vtn.vtn.model.EventoAgendadoDTO;
+import com.micromobilidade.vtn.vtn.model.EventoFrontDTO;
+import com.micromobilidade.vtn.vtn.model.EventoImediatoDTO;
 import com.micromobilidade.vtn.vtn.model.TipoEventoUFSM;
 import com.micromobilidade.vtn.vtn.repository.ApiRepository;
 import com.micromobilidade.vtn.vtn.repository.InversorEventoRepository;
@@ -17,7 +19,6 @@ import org.springframework.web.client.RestClient;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -60,13 +61,15 @@ public class EventoService {
         importarEventoAPI();
     }
 
-    public void cadastrarEventoBanco (EventoDTOUFSM eventoDTOUFSM) {
+    public void cadastrarEventoBanco (EventoFrontDTO eventoFrontDTO) {
 
+        String resposta = publicarDTOApiJeann(eventoFrontDTO);
 
-        publicarDTOApiJeann(eventoDTOUFSM);
-        salvarEventoBanco(eventoDTOUFSM);
+        if(resposta == null){
+            throw new RuntimeException("Falha ao publicar evento na API");
+        }
 
-
+        salvarEventoBanco(eventoFrontDTO);
     }
 
     public Double calculoInversor(Integer idInversor, Double valor, TipoEventoUFSM tipoEventoUFSM) {
@@ -79,7 +82,7 @@ public class EventoService {
                 inversor.getPotenciaMaximaDescargaPorBateriaW() * inversor.getQuantidadeBaterias();
 
 
-        Double valorCalculado = valor / 2;
+        Double valorCalculado = valor / inversorRepository.count();
 
         if (valorCalculado > inversor.getPotenciaMaximaW() && tipoEventoUFSM == TipoEventoUFSM.limit_charge) {
             valorCalculado = inversor.getPotenciaMaximaW();
@@ -92,53 +95,87 @@ public class EventoService {
     }
 
 
-    public String publicarDTOApiJeann(EventoDTOUFSM eventoDTOUFSM) {
+    public String publicarDTOApiJeann(EventoFrontDTO eventoFrontDTO) {
+
+        long agora = System.currentTimeMillis();
 
 
-        Double valor = calculoInversor(idInversorUfsm, eventoDTOUFSM.value(), eventoDTOUFSM.type());
 
+        Double valor = calculoInversor(idInversorUfsm, eventoFrontDTO.value(), eventoFrontDTO.type());
 
-        //da ufsm trabalha com %
-        if(eventoDTOUFSM.type()== TipoEventoUFSM.inject) {
-            valor = calculoPotenciaDisponivel(eventoDTOUFSM.value(), idInversorUfsm);
+        // UFSM trabalha com %
+        if (eventoFrontDTO.type() == TipoEventoUFSM.inject) {
+            valor = calculoPotenciaDisponivel(
+                    eventoFrontDTO.value(),
+                    idInversorUfsm
+            );
         }
 
-        //dividir a carga entre os inversoes e publicar
-        EventoDTOUFSM dtoDividido = new EventoDTOUFSM(
-                eventoDTOUFSM.id(),
-                valor,
-                eventoDTOUFSM.type(),
-                eventoDTOUFSM.startTime(),
-                eventoDTOUFSM.endTime()
-        );
+        if (eventoFrontDTO.startTime() <= agora) {
 
-        try {
-            return restClient.post()
-                    .uri(url + "/create")
-                    .body(dtoDividido)
-                    .retrieve()
-                    .body(String.class);
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
+
+            long duracaoMs = eventoFrontDTO.endTime() - agora;
+            int duracaoMin = (int) Math.ceil(duracaoMs / 60000.0);
+
+            EventoImediatoDTO eventoImediatoDTO =
+                    new EventoImediatoDTO(valor, duracaoMin);
+
+            try {
+
+                System.out.println(url + "/cmd/" + eventoFrontDTO.type());
+
+                return restClient.post()
+                        .uri(url + "/cmd/" + eventoFrontDTO.type())
+                        .body(eventoImediatoDTO)
+                        .retrieve()
+                        .body(String.class);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw e;
+            }
+        }
+
+
+        else {
+
+            String startIso = Instant.ofEpochMilli(eventoFrontDTO.startTime()).toString();
+            String endIso = Instant.ofEpochMilli(eventoFrontDTO.endTime()).toString();
+
+            EventoAgendadoDTO eventoAgendadoDTO = new EventoAgendadoDTO(valor, startIso,  endIso);
+
+
+            try {
+
+                System.out.println("Endpoint schedule: " + url + "/schedule/" + eventoFrontDTO.type());
+                return restClient.post()
+                        .uri(url + "/schedule/" + eventoFrontDTO.type())
+                        .body(eventoAgendadoDTO)
+                        .retrieve()
+                        .body(String.class);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw e;
+            }
         }
     }
 
 
-    public EventoDTOUFSM[] buscarEventos(){
+    public EventoFrontDTO[] buscarEventos(){
 
         try {
             return restClient.get()
-                    .uri(url)
+                    .uri(url+"/events")
                     .retrieve()
-                    .body(EventoDTOUFSM[].class);
+                    .body(EventoFrontDTO[].class);
         } catch (Exception e) {
             e.printStackTrace();
             throw e;
         }
     }
 
-    public void salvarEventoBanco(EventoDTOUFSM dto) {
+    public void salvarEventoBanco(EventoFrontDTO dto) {
 
         LocalDateTime dataInicial = Instant.ofEpochMilli(dto.startTime())
                 .atZone(ZoneId.systemDefault())
@@ -191,9 +228,9 @@ public class EventoService {
 
     public void importarEventoAPI(){
 
-        EventoDTOUFSM[] apiDTO = buscarEventos();
+        EventoFrontDTO[] apiDTO = buscarEventos();
 
-        for(EventoDTOUFSM dto : apiDTO){
+        for(EventoFrontDTO dto : apiDTO){
 
             LocalDateTime dataInicial = Instant.ofEpochMilli(dto.startTime())
                     .atZone(ZoneId.systemDefault())
@@ -221,12 +258,12 @@ public class EventoService {
     }
 
     public boolean verificarEvento(long dataInicial, long dataFinal){
-        EventoDTOUFSM[] eventos = restClient.get()
-                .uri(url)
+        EventoFrontDTO[] eventos = restClient.get()
+                .uri(url+"/events")
                 .retrieve()
-                .body(EventoDTOUFSM[].class);
+                .body(EventoFrontDTO[].class);
 
-        for(EventoDTOUFSM evento : eventos){
+        for(EventoFrontDTO evento : eventos){
             long dataInicialDTO = evento.startTime();
             long dataFinalDTO = evento.endTime();
 

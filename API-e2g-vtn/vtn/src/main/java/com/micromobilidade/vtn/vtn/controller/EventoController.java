@@ -1,6 +1,6 @@
 package com.micromobilidade.vtn.vtn.controller;
 
-import com.micromobilidade.vtn.vtn.model.EventoDTOUFSM;
+import com.micromobilidade.vtn.vtn.model.EventoFrontDTO;
 import com.micromobilidade.vtn.vtn.service.EventoService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,7 +19,7 @@ public class EventoController {
 
 
     @PostMapping("/create")
-    public ResponseEntity<?> criarEvento(@RequestBody EventoDTOUFSM dto) {
+    public ResponseEntity<?> criarEvento(@RequestBody EventoFrontDTO dto) {
 
         long dataInicial = dto.startTime();
         long dataFinal = dto.endTime();
