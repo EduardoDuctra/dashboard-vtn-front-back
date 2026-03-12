@@ -1,0 +1,1 @@
+alter table evento add column  tipo_evento VARCHAR(50)

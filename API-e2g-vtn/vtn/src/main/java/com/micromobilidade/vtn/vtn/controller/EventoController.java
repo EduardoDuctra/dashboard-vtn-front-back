@@ -1,25 +1,25 @@
 package com.micromobilidade.vtn.vtn.controller;
 
-import com.micromobilidade.vtn.vtn.model.VtnDTO;
-import com.micromobilidade.vtn.vtn.service.VtnService;
+import com.micromobilidade.vtn.vtn.model.EventoDTOUFSM;
+import com.micromobilidade.vtn.vtn.service.EventoService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/vtn")
-public class VtnController {
+public class EventoController {
 
-    private final VtnService service;
+    private final EventoService service;
 
-// atualizar git -teste
-    public VtnController(VtnService service) {
+
+    public EventoController(EventoService service) {
         this.service = service;
     }
 
 
     @PostMapping("/create")
-    public ResponseEntity<?> criarEvento(@RequestBody VtnDTO dto) {
+    public ResponseEntity<?> criarEvento(@RequestBody EventoDTOUFSM dto) {
 
         long dataInicial = dto.startTime();
         long dataFinal = dto.endTime();
@@ -31,7 +31,13 @@ public class VtnController {
                     .body("Evento já existente nesse intervalo de tempo");
         }
       else {
-            return ResponseEntity.ok(service.publicarDTO(dto));
+            System.out.println("Valor:" + dto.value());
+            System.out.println("Data inicial:" + dataInicial);
+            System.out.println("Data fim:" + dataFinal);
+
+
+            service.cadastrarEventoBanco(dto);
+            return ResponseEntity.ok("Evento criado com sucesso");
         }
     }
 
@@ -42,7 +48,7 @@ public class VtnController {
     }
 
 
-//    d
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletarEvento(@PathVariable String id){
         return ResponseEntity.ok(service.deletarEvento(id));
