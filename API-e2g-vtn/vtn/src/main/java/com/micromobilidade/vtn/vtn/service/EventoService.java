@@ -4,10 +4,7 @@ import com.micromobilidade.vtn.vtn.entity.EventoEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEventoEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEventoId;
-import com.micromobilidade.vtn.vtn.model.EventoAgendadoDTO;
-import com.micromobilidade.vtn.vtn.model.EventoFrontDTO;
-import com.micromobilidade.vtn.vtn.model.EventoImediatoDTO;
-import com.micromobilidade.vtn.vtn.model.TipoEventoUFSM;
+import com.micromobilidade.vtn.vtn.model.*;
 import com.micromobilidade.vtn.vtn.repository.ApiRepository;
 import com.micromobilidade.vtn.vtn.repository.InversorEventoRepository;
 import com.micromobilidade.vtn.vtn.repository.InversorRepository;
@@ -25,7 +22,8 @@ import java.util.List;
 public class EventoService {
 
     private final RestClient restClient;
-    private final String url;
+    private final String urlUFSM;
+    private final String urlEnergy2Go;
 
     private final ApiRepository apiRepository;
     private final InversorEventoRepository inversorEventoRepository;
@@ -39,11 +37,16 @@ public class EventoService {
     public EventoService(
             @Value("${username}") String username,
             @Value("${password}") String password,
-            @Value("${url}") String url, ApiRepository apiRepositori, InversorEventoRepository inversorEventoRepository, InversorRepository inversorRepository
+            @Value("${url}") String urlUFSM,
+            @Value("${urlEnergy2Go}") String urlEnergy2Go,
+            ApiRepository apiRepositori,
+            InversorEventoRepository inversorEventoRepository,
+            InversorRepository inversorRepository
     ) {
 
 
-        this.url = url;
+        this.urlUFSM = urlUFSM;
+        this.urlEnergy2Go = urlEnergy2Go;
         this.apiRepository = apiRepositori;
         this.inversorEventoRepository = inversorEventoRepository;
         this.inversorRepository = inversorRepository;
@@ -58,20 +61,23 @@ public class EventoService {
 
     @PostConstruct
     public void carregarEventosAPI() {
-        importarEventoAPI();
+        importarEventoApiUfsm();
     }
+
 
     public void cadastrarEventoBanco (EventoFrontDTO eventoFrontDTO) {
 
-        String resposta = publicarDTOApiJeann(eventoFrontDTO);
+        String respostaUFSM = publicarDTOApiJeann(eventoFrontDTO);
+        System.out.println("Resposta UFSM: " + respostaUFSM);
 
-        if(resposta == null){
-            throw new RuntimeException("Falha ao publicar evento na API");
-        }
+        String respostaEnergy = publicarDTOApiEnergy2Go(eventoFrontDTO);
+        System.out.println("Resposta Energy2Go: " + respostaEnergy);
+
 
         salvarEventoBanco(eventoFrontDTO);
     }
 
+    //dividir potencia pela quantidade de inversores
     public Double calculoInversor(Integer idInversor, Double valor, TipoEventoUFSM tipoEventoUFSM) {
 
         InversorEntity inversor = inversorRepository.findById(idInversor)
@@ -101,15 +107,8 @@ public class EventoService {
 
 
 
-        Double valor = calculoInversor(idInversorUfsm, eventoFrontDTO.value(), eventoFrontDTO.type());
-
-        // UFSM trabalha com %
-        if (eventoFrontDTO.type() == TipoEventoUFSM.inject) {
-            valor = calculoPotenciaDisponivel(
-                    eventoFrontDTO.value(),
-                    idInversorUfsm
-            );
-        }
+        // inversor trabalha com %
+        Double valorPorcentagem = calculoPotenciaDisponivel(eventoFrontDTO, idInversorUfsm);
 
         if (eventoFrontDTO.startTime() <= agora) {
 
@@ -118,14 +117,14 @@ public class EventoService {
             int duracaoMin = (int) Math.ceil(duracaoMs / 60000.0);
 
             EventoImediatoDTO eventoImediatoDTO =
-                    new EventoImediatoDTO(valor, duracaoMin);
+                    new EventoImediatoDTO(valorPorcentagem, duracaoMin);
 
             try {
 
-                System.out.println(url + "/cmd/" + eventoFrontDTO.type());
+                System.out.println(urlUFSM + "/cmd/" + eventoFrontDTO.type());
 
                 return restClient.post()
-                        .uri(url + "/cmd/" + eventoFrontDTO.type())
+                        .uri(urlUFSM + "/cmd/" + eventoFrontDTO.type())
                         .body(eventoImediatoDTO)
                         .retrieve()
                         .body(String.class);
@@ -142,14 +141,14 @@ public class EventoService {
             String startIso = Instant.ofEpochMilli(eventoFrontDTO.startTime()).toString();
             String endIso = Instant.ofEpochMilli(eventoFrontDTO.endTime()).toString();
 
-            EventoAgendadoDTO eventoAgendadoDTO = new EventoAgendadoDTO(valor, startIso,  endIso);
+            EventoAgendadoDTO eventoAgendadoDTO = new EventoAgendadoDTO(valorPorcentagem, startIso,  endIso);
 
 
             try {
 
-                System.out.println("Endpoint schedule: " + url + "/schedule/" + eventoFrontDTO.type());
+                System.out.println("Endpoint schedule: " + urlUFSM + "/schedule/" + eventoFrontDTO.type());
                 return restClient.post()
-                        .uri(url + "/schedule/" + eventoFrontDTO.type())
+                        .uri(urlUFSM + "/schedule/" + eventoFrontDTO.type())
                         .body(eventoAgendadoDTO)
                         .retrieve()
                         .body(String.class);
@@ -162,11 +161,36 @@ public class EventoService {
     }
 
 
+    public String publicarDTOApiEnergy2Go(EventoFrontDTO eventoFrontDTO) {
+
+        // inversor trabalha com %
+        Double valorPorcentagem = calculoPotenciaDisponivel(eventoFrontDTO, idInversorE2G);
+
+        EventoDTOE2G dtoEnergy = new EventoDTOE2G(valorPorcentagem);
+
+
+        try {
+
+            System.out.println(urlEnergy2Go + "/" + eventoFrontDTO.type());
+
+            return restClient.post()
+                    .uri(urlEnergy2Go + "/" + eventoFrontDTO.type())
+                    .body(dtoEnergy)
+                    .retrieve()
+                    .body(String.class);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
+
+    }
+
     public EventoFrontDTO[] buscarEventos(){
 
         try {
             return restClient.get()
-                    .uri(url+"/events")
+                    .uri(urlUFSM +"/events")
                     .retrieve()
                     .body(EventoFrontDTO[].class);
         } catch (Exception e) {
@@ -226,7 +250,7 @@ public class EventoService {
 
     }
 
-    public void importarEventoAPI(){
+    public void importarEventoApiUfsm(){
 
         EventoFrontDTO[] apiDTO = buscarEventos();
 
@@ -248,7 +272,7 @@ public class EventoService {
 
         try {
             return restClient.delete()
-                    .uri(url + "/" + id)
+                    .uri(urlUFSM + "/" + id)
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
@@ -259,7 +283,7 @@ public class EventoService {
 
     public boolean verificarEvento(long dataInicial, long dataFinal){
         EventoFrontDTO[] eventos = restClient.get()
-                .uri(url+"/events")
+                .uri(urlUFSM +"/events")
                 .retrieve()
                 .body(EventoFrontDTO[].class);
 
@@ -279,18 +303,30 @@ public class EventoService {
 
 
     //preciso pq o inversor da UFSM é por % e no input eu mando o valor em watts
-    public Double calculoPotenciaDisponivel(Double potencia, Integer idInversor) {
+    public Double calculoPotenciaDisponivel(EventoFrontDTO dto, Integer idInversor) {
 
 
         InversorEntity inversor = inversorRepository.findById(idInversor)
                 .orElseThrow(() -> new RuntimeException("Inversor não encontrado"));
 
+        Double potenciaInversor = calculoInversor(inversor.getId(), dto.value(), dto.type());
 
-        Double valorMaximoDescarga =
-                inversor.getPotenciaMaximaDescargaPorBateriaW() * inversor.getQuantidadeBaterias();
+        Double porcentagemPotencia =0.0;
 
-        Double porcentagemPotencia =
-                (potencia * 100) / valorMaximoDescarga;
+        if(dto.type()==TipoEventoUFSM.inject){
+
+            Double valorMaximoDescarga =
+                    inversor.getPotenciaMaximaDescargaPorBateriaW() * inversor.getQuantidadeBaterias();
+
+            porcentagemPotencia =
+                    (potenciaInversor * 100) / valorMaximoDescarga;
+
+
+        } else{
+            porcentagemPotencia =
+                    (potenciaInversor * 100) / inversor.getPotenciaMaximaW();
+
+        }
 
         if (porcentagemPotencia > 100) {
             porcentagemPotencia = 100.0;
