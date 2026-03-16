@@ -4,9 +4,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record RespostaBackToFrontDTO (Integer id,
+                                      String idApiUfsm,
                                       double potencialTotal,
                                       TipoEvento type,
                                       LocalDateTime dataInicial,
                                       LocalDateTime dataFinal,
-                                      List<InversorPotenciaDTO>potenciasInversores){
+                                      List<InversoresDTO> inversores){
 }

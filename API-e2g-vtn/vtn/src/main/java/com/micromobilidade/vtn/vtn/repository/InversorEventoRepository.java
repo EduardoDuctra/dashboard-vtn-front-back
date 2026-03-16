@@ -9,5 +9,7 @@ import java.util.List;
 public interface InversorEventoRepository extends JpaRepository<InversorEventoEntity, InversorEventoId> {
 
     List<InversorEventoEntity> findByIdIdEvento(Integer idEvento);
+    boolean existsByIdApiUFSM(String idApiUFSM);
+
 
 }

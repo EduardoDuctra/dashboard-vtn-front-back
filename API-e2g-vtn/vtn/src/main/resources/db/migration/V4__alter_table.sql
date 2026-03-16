@@ -1,0 +1,1 @@
+alter table inversor_evento add column id_evento_api_ufsm VARCHAR(50)

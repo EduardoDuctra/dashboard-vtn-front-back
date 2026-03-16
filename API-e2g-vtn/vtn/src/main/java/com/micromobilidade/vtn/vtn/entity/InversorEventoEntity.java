@@ -21,4 +21,7 @@ public class InversorEventoEntity {
     @JoinColumn(name = "id_inversor", insertable = false, updatable = false)
     private InversorEntity inversor;
 
+    @Column(name = "id_evento_api_ufsm")
+    private String idApiUFSM;
+
 }

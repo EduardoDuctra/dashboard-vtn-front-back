@@ -57,6 +57,10 @@ public class EventoController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletarEvento(@PathVariable String id){
-        return ResponseEntity.ok(service.deletarEvento(id));
+
+        service.deletarEventoEnergy2Go();
+
+        return ResponseEntity.ok(service.deletarEventoAPIJean(id));
+
     }
 }
