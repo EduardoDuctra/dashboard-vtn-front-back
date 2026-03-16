@@ -1,6 +1,7 @@
 package com.micromobilidade.vtn.vtn.entity;
 
-import com.micromobilidade.vtn.vtn.model.TipoEventoUFSM;
+import com.micromobilidade.vtn.vtn.model.TipoEvento;
+import com.micromobilidade.vtn.vtn.model.TipoEvento;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -29,7 +30,7 @@ public class EventoEntity {
 
     @Column(name = "tipo_evento")
     @Enumerated(EnumType.STRING)
-    private TipoEventoUFSM tipoEventoUFSM;
+    private TipoEvento tipoEventoUFSM;
 
 
 }

@@ -1,5 +1,5 @@
 package com.micromobilidade.vtn.vtn.model;
 
-public enum TipoEventoUFSM {
+public enum TipoEvento {
     limit_charge, inject
 }

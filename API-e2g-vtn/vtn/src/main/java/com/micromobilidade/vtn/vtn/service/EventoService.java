@@ -13,10 +13,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class EventoService {
@@ -62,6 +67,29 @@ public class EventoService {
     @PostConstruct
     public void carregarEventosAPI() {
         importarEventoApiUfsm();
+
+        List<EventoEntity> eventos = apiRepository.findByDataInicialAfter(LocalDateTime.now());
+
+
+        //preciso buscar do banco e converter num DTO e mando para -> agendarEventoEnergy
+        for(EventoEntity evento : eventos) {
+
+            EventoFrontDTO dto = new EventoFrontDTO(
+                    evento.getId().toString(),
+                    evento.getPotenciaSolicitadaKw(),
+                    evento.getTipoEventoUFSM(),
+                    evento.getDataInicial()
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli(),
+                    evento.getDataFinal()
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli()
+            );
+
+            agendarEventoEnergy(dto);
+        }
     }
 
 
@@ -70,7 +98,8 @@ public class EventoService {
         String respostaUFSM = publicarDTOApiJeann(eventoFrontDTO);
         System.out.println("Resposta UFSM: " + respostaUFSM);
 
-        String respostaEnergy = publicarDTOApiEnergy2Go(eventoFrontDTO);
+//        String respostaEnergy = publicarDTOApiEnergy2Go(eventoFrontDTO);
+        String respostaEnergy = agendarEventoEnergy (eventoFrontDTO);
         System.out.println("Resposta Energy2Go: " + respostaEnergy);
 
 
@@ -78,7 +107,7 @@ public class EventoService {
     }
 
     //dividir potencia pela quantidade de inversores
-    public Double calculoInversor(Integer idInversor, Double valor, TipoEventoUFSM tipoEventoUFSM) {
+    public Double calculoInversor(Integer idInversor, Double valor, TipoEvento tipoEventoUFSM) {
 
         InversorEntity inversor = inversorRepository.findById(idInversor)
                 .orElseThrow(() -> new RuntimeException("Inversor não encontrado"));
@@ -90,10 +119,10 @@ public class EventoService {
 
         Double valorCalculado = valor / inversorRepository.count();
 
-        if (valorCalculado > inversor.getPotenciaMaximaW() && tipoEventoUFSM == TipoEventoUFSM.limit_charge) {
+        if (valorCalculado > inversor.getPotenciaMaximaW() && tipoEventoUFSM == tipoEventoUFSM.limit_charge) {
             valorCalculado = inversor.getPotenciaMaximaW();
         }
-        else if (valorCalculado > valorMaximoDescarga && tipoEventoUFSM == TipoEventoUFSM.inject) {
+        else if (valorCalculado > valorMaximoDescarga && tipoEventoUFSM == tipoEventoUFSM.inject) {
             valorCalculado = valorMaximoDescarga;
         }
 
@@ -313,7 +342,7 @@ public class EventoService {
 
         Double porcentagemPotencia =0.0;
 
-        if(dto.type()==TipoEventoUFSM.inject){
+        if(dto.type()==TipoEvento.inject){
 
             Double valorMaximoDescarga =
                     inversor.getPotenciaMaximaDescargaPorBateriaW() * inversor.getQuantidadeBaterias();
@@ -333,5 +362,74 @@ public class EventoService {
         }
 
         return porcentagemPotencia;
+    }
+
+
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
+    //preciso do EventoFrontDTO -> pq faz as conversões dps em publicarDTOApiEnergy2Go
+    public String agendarEventoEnergy(EventoFrontDTO dto){
+
+        LocalDateTime dataInicialConvertida = Instant.ofEpochMilli(dto.startTime())
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
+
+        long atraso = Duration.between(LocalDateTime.now(), dataInicialConvertida).toMillis();
+
+        if(atraso < 0){
+            atraso = 0;
+        }
+
+        scheduler.schedule(() -> {
+            try {
+                publicarDTOApiEnergy2Go(dto);
+            } catch (Exception e) {
+                System.out.println("Erro ao executar evento Energy2Go: " + e.getMessage());
+            }
+        }, atraso, TimeUnit.MILLISECONDS);
+
+        return "Evento agendado com sucesso";
+    }
+
+
+    //criar a lista junto para o front com os dois inverosres + potencia
+    public List<RespostaBackToFrontDTO> buscarEventosComInversores(){
+
+
+        List<RespostaBackToFrontDTO> respostaParaFront = new ArrayList<>();
+
+        List<EventoEntity> eventosVindosDoBanco = apiRepository.findAll();
+
+
+
+        for(EventoEntity evento : eventosVindosDoBanco){
+
+            List<InversorPotenciaDTO> inversoresDTO = new ArrayList<>();
+
+            List<InversorEventoEntity> inversoresEvento =
+                    inversorEventoRepository.findByIdIdEvento(evento.getId());
+
+            for(InversorEventoEntity inversorEvento : inversoresEvento){
+
+                InversorEntity inversor = inversorRepository.findById(inversorEvento.getId().getIdInversor())
+                        .orElseThrow();
+
+                InversorPotenciaDTO inversorDTO = new InversorPotenciaDTO(
+                       inversor.getId(), inversor.getLocal(), inversorEvento.getPotenciaEntregueKw());
+
+                inversoresDTO.add(inversorDTO);
+            }
+
+            RespostaBackToFrontDTO respostaEvento = new RespostaBackToFrontDTO(
+                    evento.getId(),
+                    evento.getPotenciaSolicitadaKw(),
+                    evento.getTipoEventoUFSM(),
+                    evento.getDataInicial(),
+                    evento.getDataFinal(),
+                    inversoresDTO
+            );
+
+            respostaParaFront.add(respostaEvento);
+        }
+        return respostaParaFront;
     }
 }

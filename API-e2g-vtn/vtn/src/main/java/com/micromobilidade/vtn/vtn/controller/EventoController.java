@@ -47,6 +47,12 @@ public class EventoController {
 
     }
 
+    @GetMapping("/events-complete")
+    public ResponseEntity<?> listarEventosCompleto() {
+        return ResponseEntity.ok(service.buscarEventosComInversores());
+
+    }
+
 
 
     @DeleteMapping("/{id}")
