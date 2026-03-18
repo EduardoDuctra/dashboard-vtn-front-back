@@ -1,4 +1,4 @@
-export interface VtnDTO {
+export interface EventoDTO {
   id?: string;
   type: string;
   value: number;

@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, inject, ViewChild } from '@angular/core';
 import { Breakpoints, BreakpointObserver } from '@angular/cdk/layout';
 import { map } from 'rxjs/operators';
 import { AsyncPipe, CommonModule } from '@angular/common';
@@ -22,10 +22,11 @@ import { MatNativeDateModule } from '@angular/material/core';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ModalAgendamentoComponent } from '../modal-agendamento/modal-agendamento.component';
 import { VtnService } from '../services/vtn.service';
-import { VtnDTO } from '../model/VtnDTO';
+import { EventoDTO } from '../model/EventoDTO';
 import { MatTabsModule } from '@angular/material/tabs';
 import { TipoEvento } from '../shared/tipoEvento';
 import { environment } from '../../environments/environment';
+import { EventoUnificado } from '../model/EventoUnificado';
 
 @Component({
   selector: 'app-dashboard-vtn',
@@ -60,7 +61,7 @@ export class DashboardVtnComponent {
 
   private vtnService = inject(VtnService);
 
-  eventos: VtnDTO[] = [];
+  eventos: EventoUnificado[] = [];
 
   potenciaExibidaDashboard: number | null = null;
   dataFim: Date | null = null;
@@ -71,15 +72,18 @@ export class DashboardVtnComponent {
   statusAtivo = false;
   horasReducao: number | null = null;
 
-  potenciaMaximaInversor = environment.estacao.potenciaMaximaInversor;
+  // potenciaMaximaInversor = environment.estacao.potenciaMaximaInversor;
   potenciaAtual: number | null = null;
 
   type = TipoEvento.limit_charge;
   abaSelecionada = 0;
 
-  capacidadeBateria = environment.estacao.capacidadeBateria;
-  quantidadeBaterias = environment.estacao.quantidadeBaterias;
-  potenciaMaximaDescarga = environment.estacao.potenciaMaximaDescarga;
+  @ViewChild(GraficoHistoricoComponent)
+  grafico!: GraficoHistoricoComponent;
+
+  // capacidadeBateria = environment.estacao.capacidadeBateria;
+  // quantidadeBaterias = environment.estacao.quantidadeBaterias;
+  // potenciaMaximaDescarga = environment.estacao.potenciaMaximaDescarga;
 
   tipoEventoAtivo: String | null = null;
 
@@ -161,7 +165,7 @@ export class DashboardVtnComponent {
 
     valorFinal = valorDigitado;
 
-    const vtnDTO: VtnDTO = {
+    const vtnDTO: EventoDTO = {
       type: this.type,
       value: valorFinal,
       startTime: inicio.getTime(),
@@ -173,8 +177,12 @@ export class DashboardVtnComponent {
     this.vtnService.criarEvento(vtnDTO).subscribe({
       next: (res) => {
         console.log('Evento criado com sucesso:', res);
+
         this.formReducao.reset();
-        this.getEventos();
+
+        setTimeout(() => {
+          location.reload();
+        }, 5000);
       },
       error: (err) => {
         if (err.status === 409) {
@@ -197,34 +205,33 @@ export class DashboardVtnComponent {
     this.vtnService.buscarEventos().subscribe({
       next: (res) => {
         this.eventos = res;
+
         this.verificarEventosAtivos();
-        console.log('Eventos:', res);
-      },
-      error: (err) => {
-        console.error('Erro ao carregar eventos:', err);
+
+        if (this.grafico) {
+          this.grafico.atualizarDados(res);
+        }
       },
     });
   }
 
-  eventoAtivo: VtnDTO | null = null;
+  eventoAtivo: EventoUnificado | null = null;
 
   verificarEventosAtivos() {
     const agora = Date.now();
 
     this.eventoAtivo =
-      this.eventos.find((e) => e.startTime <= agora && e.endTime > agora) ||
-      null;
+      this.eventos.find((e) => {
+        const inicio = new Date(e.startTime).getTime();
+        const fim = new Date(e.endTime).getTime();
+        return inicio <= agora && fim > agora;
+      }) || null;
 
     if (this.eventoAtivo) {
       this.statusAtivo = true;
       this.tipoEventoAtivo = this.eventoAtivo.type;
       this.dataFim = new Date(this.eventoAtivo.endTime);
 
-      if (this.eventoAtivo.type === TipoEvento.inject) {
-        this.potenciaAtual = this.calcularPotenciaReal(this.eventoAtivo.value);
-      } else {
-        this.potenciaAtual = this.potenciaExibida(this.eventoAtivo.value);
-      }
       this.monitorarStatus();
     } else {
       this.statusAtivo = false;
@@ -233,18 +240,18 @@ export class DashboardVtnComponent {
       this.potenciaAtual = null;
     }
   }
-  calcularPotenciaReal(porcentagem: number) {
-    const potenciaMaximaEstacao =
-      this.potenciaMaximaDescarga * this.quantidadeBaterias;
+  // calcularPotenciaReal(porcentagem: number) {
+  //   const potenciaMaximaEstacao =
+  //     this.potenciaMaximaDescarga * this.quantidadeBaterias;
 
-    return (porcentagem / 100) * potenciaMaximaEstacao;
-  }
-  potenciaExibida(potenciaSolicitada: number): number {
-    if (potenciaSolicitada > this.potenciaMaximaInversor) {
-      return this.potenciaMaximaInversor;
-    }
-    return potenciaSolicitada;
-  }
+  //   return (porcentagem / 100) * potenciaMaximaEstacao;
+  // }
+  // potenciaExibida(potenciaSolicitada: number): number {
+  //   if (potenciaSolicitada > this.potenciaMaximaInversor) {
+  //     return this.potenciaMaximaInversor;
+  //   }
+  //   return potenciaSolicitada;
+  // }
 
   monitorarStatus() {
     if (!this.dataFim) {

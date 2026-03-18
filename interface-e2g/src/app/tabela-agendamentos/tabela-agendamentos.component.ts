@@ -10,11 +10,12 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
-import { VtnDTO } from '../model/VtnDTO';
+import { EventoDTO } from '../model/EventoDTO';
 import { VtnService } from '../services/vtn.service';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { environment } from '../../environments/environment';
+import { EventoUnificado } from '../model/EventoUnificado';
 
 @Component({
   selector: 'app-tabela-agendamentos',
@@ -24,44 +25,40 @@ import { environment } from '../../environments/environment';
   styleUrl: './tabela-agendamentos.component.css',
 })
 export class TabelaAgendamentosComponent implements OnChanges {
-  @Input() eventos: VtnDTO[] = [];
+  @Input() eventos: EventoUnificado[] = [];
   @Output() atualizar = new EventEmitter<void>();
 
   private vtnService = inject(VtnService);
 
   displayedColumns: string[] = [
-    'tipoEvento',
-    'potencia',
-    'dataInicial',
-    'dataFinal',
+    'type',
+    'value',
+    'startTime',
+    'endTime',
     'deletar',
   ];
 
-  eventosFuturos: VtnDTO[] = [];
+  eventosFuturos: EventoUnificado[] = [];
 
   ngOnChanges(changes: SimpleChanges) {
+    console.log('EVENTOS RECEBIDOS:', this.eventos);
+
     if (changes['eventos']) {
       this.filtrarEventosFuturos();
     }
   }
 
-  obterValorPotencia(evento: any) {
-    const potMaximaDescarga =
-      environment.estacao.potenciaMaximaDescarga *
-      environment.estacao.quantidadeBaterias;
-
+  obterValorPotencia(evento: EventoUnificado): number {
     if (evento.type === 'inject') {
-      const valorPotencia = (potMaximaDescarga * evento.value) / 100;
-      if (valorPotencia > potMaximaDescarga) {
-        return -potMaximaDescarga;
-      }
-      return -valorPotencia;
+      return -evento.value;
+    } else {
+      return evento.value;
     }
-    return evento.value;
   }
 
   filtrarEventosFuturos() {
     const agora = Date.now();
+    console.log('AGORA:', agora);
 
     this.eventosFuturos = this.eventos
       .filter((e) => e.startTime > agora)
@@ -69,6 +66,7 @@ export class TabelaAgendamentosComponent implements OnChanges {
   }
 
   deletar(id: string) {
+    console.log('ID enviado para deletar:', id);
     this.vtnService.deletarEvento(id).subscribe({
       next: (res) => {
         this.atualizar.emit();
