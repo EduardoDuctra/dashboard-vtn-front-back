@@ -1,12 +1,13 @@
 package com.micromobilidade.vtn.vtn.service;
 
+import com.micromobilidade.vtn.vtn.entity.EventoEnergy2GoEntity;
 import com.micromobilidade.vtn.vtn.entity.EventoEntity;
+import com.micromobilidade.vtn.vtn.entity.EventoUFSMEntity;
 import com.micromobilidade.vtn.vtn.entity.InversorEntity;
-import com.micromobilidade.vtn.vtn.entity.InversorEventoEntity;
-import com.micromobilidade.vtn.vtn.entity.InversorEventoId;
 import com.micromobilidade.vtn.vtn.model.*;
-import com.micromobilidade.vtn.vtn.repository.ApiRepository;
-import com.micromobilidade.vtn.vtn.repository.InversorEventoRepository;
+import com.micromobilidade.vtn.vtn.repository.EventoE2GRepository;
+import com.micromobilidade.vtn.vtn.repository.EventoRepository;
+import com.micromobilidade.vtn.vtn.repository.EventoUFSMRepository;
 import com.micromobilidade.vtn.vtn.repository.InversorRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
@@ -18,8 +19,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,9 +34,10 @@ public class EventoService {
     private final String urlUFSM;
     private final String urlEnergy2Go;
 
-    private final ApiRepository apiRepository;
-    private final InversorEventoRepository inversorEventoRepository;
+    private final EventoRepository eventoRepository;
     private final InversorRepository inversorRepository;
+    private final EventoUFSMRepository eventoUFSMRepository;
+    private final EventoE2GRepository eventoE2GRepository;
 
 
     int idInversorUfsm = 1;
@@ -45,17 +49,17 @@ public class EventoService {
             @Value("${password}") String password,
             @Value("${url}") String urlUFSM,
             @Value("${urlEnergy2Go}") String urlEnergy2Go,
-            ApiRepository apiRepositori,
-            InversorEventoRepository inversorEventoRepository,
-            InversorRepository inversorRepository
+            EventoRepository eventoRepository,
+            InversorRepository inversorRepository, EventoUFSMRepository eventoUFSMRepository, EventoE2GRepository eventoE2GRepository
     ) {
 
 
         this.urlUFSM = urlUFSM;
         this.urlEnergy2Go = urlEnergy2Go;
-        this.apiRepository = apiRepositori;
-        this.inversorEventoRepository = inversorEventoRepository;
+        this.eventoRepository = eventoRepository;
         this.inversorRepository = inversorRepository;
+        this.eventoUFSMRepository = eventoUFSMRepository;
+        this.eventoE2GRepository = eventoE2GRepository;
 
         this.restClient = RestClient.builder()
                 .defaultHeaders(headers ->
@@ -69,7 +73,7 @@ public class EventoService {
     public void carregarEventosAPI() {
         importarEventoApiUfsm();
 
-        List<EventoEntity> eventos = apiRepository.findByDataInicialAfter(LocalDateTime.now());
+        List<EventoEntity> eventos = eventoRepository.findByDataInicialAfter(LocalDateTime.now());
 
 
         //preciso buscar do banco e converter num DTO e mando para -> agendarEventoEnergy
@@ -96,93 +100,153 @@ public class EventoService {
 
     public void cadastrarEventoBanco (EventoFrontDTO eventoFrontDTO) {
 
-        String respostaUFSM = publicarDTOApiJeann(eventoFrontDTO);
+        System.out.println("Valor recebido do front: "+eventoFrontDTO.value());
+
+        String respostaUFSM = publicarDTOApiUFSM(eventoFrontDTO);
         System.out.println("Resposta UFSM: " + respostaUFSM);
 
-//        String respostaEnergy = publicarDTOApiEnergy2Go(eventoFrontDTO);
-        String respostaEnergy = agendarEventoEnergy (eventoFrontDTO);
+        String respostaEnergy = agendarEventoEnergy(eventoFrontDTO);
         System.out.println("Resposta Energy2Go: " + respostaEnergy);
+        EventoEntity evento = null;
+
+        try {
+            //salvar em evento
+            evento = salvarEventoBanco(eventoFrontDTO);
+        } catch (Exception e) {
+            System.out.println("Erro ao salvar do Evento");
+            throw new RuntimeException(e);
+        }
+
+        try {
+            //salvar nas respectivas tabelas UFSM e E2G
+            //busco na API -> acho o ID
+            EventoFrontDTO retornoComID = buscarEventoApi(eventoFrontDTO);
+            salvarEventoApiBanco(evento, retornoComID);
+
+            salvarEventoEnergy2Go(evento, eventoFrontDTO);
+        } catch (Exception e) {
+            System.out.println("Erro ao salvar do Evento nas tabelas UFSM ou Energy2GO");
+            throw new RuntimeException(e);
+        }
 
 
-        salvarEventoBanco(eventoFrontDTO, false);
     }
 
+
+
     @Transactional
-    public EventoEntity salvarEventoBanco(EventoFrontDTO dto, boolean api) {
+    public EventoEntity salvarEventoBanco(EventoFrontDTO dto) {
 
         LocalDateTime dataInicial = Instant.ofEpochMilli(dto.startTime())
                 .atZone(ZoneId.systemDefault())
                 .toLocalDateTime()
-                .withNano(0);
+                .truncatedTo(ChronoUnit.MINUTES);
 
         LocalDateTime dataFinal = Instant.ofEpochMilli(dto.endTime())
                 .atZone(ZoneId.systemDefault())
                 .toLocalDateTime()
-                .withNano(0);
+                .truncatedTo(ChronoUnit.MINUTES);
 
-        double valorPotencia = dto.value();
+        EventoEntity novoEvento = new EventoEntity();
 
-        if (api) {
+        String chave = dto.type() + "_" + dataInicial + "_" + dataFinal;
 
-            valorPotencia = calcularPorcentagemPotencia(valorPotencia, idInversorUfsm, dto.type());
+        Optional<EventoEntity> existente = eventoRepository.findByChave(chave);
+
+        if (existente.isPresent()) {
+            return existente.get();
         }
 
-        EventoEntity evento = new EventoEntity();
-        evento.setDataInicial(dataInicial);
-        evento.setDataFinal(dataFinal);
-        evento.setPotenciaSolicitadaKw(valorPotencia);
-        evento.setTipoEventoUFSM(dto.type());
+        novoEvento.setDataInicial(dataInicial);
+        novoEvento.setDataFinal(dataFinal);
+        novoEvento.setPotenciaSolicitadaKw(dto.value());
+        novoEvento.setTipoEventoUFSM(dto.type());
+        novoEvento.setChave(chave);
 
-        EventoEntity eventoSalvo = apiRepository.save(evento);
-
-        if (api) {
-
-
-            InversorEventoId inversorEventoId = new InversorEventoId();
-            inversorEventoId.setIdEvento(eventoSalvo.getId());
-            inversorEventoId.setIdInversor(idInversorUfsm);
-
-            InversorEventoEntity inversorEvento = new InversorEventoEntity();
-            inversorEvento.setId(inversorEventoId);
-            inversorEvento.setPotenciaEntregueKw(valorPotencia);
-
-            if(dto.id() != null){
-                inversorEvento.setIdApiUFSM(dto.id());
-            }
-
-            inversorEventoRepository.save(inversorEvento);
-
-        } else {
-
-
-            System.out.println("Potencia: " + valorPotencia);
-            System.out.println("Id: " + dto.id());
-
-            List<InversorEntity> inversores = inversorRepository.findAll();
-
-            for (InversorEntity inversor : inversores) {
-
-                double valor = calculoInversor(inversor.getId(), dto.value(), dto.type());
-
-                InversorEventoId inversorEventoId = new InversorEventoId();
-                inversorEventoId.setIdEvento(eventoSalvo.getId());
-                inversorEventoId.setIdInversor(inversor.getId());
-
-                InversorEventoEntity inversorEvento = new InversorEventoEntity();
-                inversorEvento.setId(inversorEventoId);
-                inversorEvento.setPotenciaEntregueKw(valor);
-
-
-                if(dto.id() != null){
-                    inversorEvento.setIdApiUFSM(dto.id());
-                }
-
-                inversorEventoRepository.save(inversorEvento);
-            }
+        try {
+            return eventoRepository.save(novoEvento);
+        } catch (Exception e) {
+            System.out.println("Erro ao salvar do Evento no banco");
+            return eventoRepository.findByChave(chave).orElseThrow();
         }
-        return evento;
     }
 
+
+
+    @Transactional
+    public void salvarEventoApiBanco(EventoEntity evento, EventoFrontDTO dto) {
+
+        LocalDateTime dataInicial = Instant.ofEpochMilli(dto.startTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        LocalDateTime dataFinal = Instant.ofEpochMilli(dto.endTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+
+        InversorEntity inversor = inversorRepository.findById(idInversorUfsm)
+                .orElseThrow(() -> new RuntimeException("Evento interno não encontrado"));
+
+        double valorPotenciaW = calcularPorcentagemPotencia(dto.value(), inversor.getId(), dto.type());
+
+        EventoUFSMEntity eventoUFSMEntity = new EventoUFSMEntity();
+        eventoUFSMEntity.setEvento(evento);
+        eventoUFSMEntity.setDataInicial(dataInicial);
+        eventoUFSMEntity.setDataFinal(dataFinal);
+        eventoUFSMEntity.setIdApi(dto.id());
+        eventoUFSMEntity.setInversor(inversor);
+        eventoUFSMEntity.setPotencia(valorPotenciaW);
+
+
+        try {
+            eventoUFSMRepository.save(eventoUFSMEntity);
+        } catch (Exception e) {
+            System.out.println("Erro ao salvar na tabela EventoUFSM");
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Transactional
+    public void salvarEventoEnergy2Go(EventoEntity evento, EventoFrontDTO eventoFrontDTO) {
+
+        LocalDateTime dataInicial = Instant.ofEpochMilli(eventoFrontDTO.startTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        LocalDateTime dataFinal = Instant.ofEpochMilli(eventoFrontDTO.endTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        InversorEntity inversor = inversorRepository.findById(idInversorE2G)
+                .orElseThrow(() -> new RuntimeException("Evento interno não encontrado"));
+
+
+        double valorPotenciaW = calculoInversor(inversor.getId(), eventoFrontDTO.value(), eventoFrontDTO.type());
+
+        EventoEnergy2GoEntity eventoE2G = new EventoEnergy2GoEntity();
+        eventoE2G.setEvento(evento);
+        eventoE2G.setDataInicial(dataInicial);
+        eventoE2G.setDataFinal(dataFinal);
+        eventoE2G.setPotencia(valorPotenciaW);
+        eventoE2G.setInversor(inversor);
+
+        try {
+            eventoE2GRepository.save(eventoE2G);
+        } catch (Exception e) {
+            System.out.println("Erro ao salvar na tabela EventoEnergy2Go");
+            throw new RuntimeException(e);
+        }
+
+
+    }
+
+
+    //nao mexer
     //dividir potencia pela quantidade de inversores
     public Double calculoInversor(Integer idInversor, Double valor, TipoEvento tipoEventoUFSM) {
 
@@ -207,35 +271,40 @@ public class EventoService {
     }
 
 
-    public String publicarDTOApiJeann(EventoFrontDTO eventoFrontDTO) {
+
+    public String publicarDTOApiUFSM(EventoFrontDTO eventoFrontDTO) {
 
         long agora = System.currentTimeMillis();
 
 
 
         // inversor trabalha com %
-        Double valorPorcentagem = calculoPotenciaParaPorcentage(eventoFrontDTO, idInversorUfsm);
+        Double valorPorcentagem = calculoPotenciaParaPorcentagem(eventoFrontDTO, idInversorUfsm);
 
         if (eventoFrontDTO.startTime() <= agora) {
 
 
             long duracaoMs = eventoFrontDTO.endTime() - agora;
-            int duracaoMin = (int) Math.ceil(duracaoMs / 60000.0);
+            long duracaoSegundos = (long) Math.ceil(duracaoMs / 1000.0);
 
             EventoImediatoDTO eventoImediatoDTO =
-                    new EventoImediatoDTO(valorPorcentagem, duracaoMin);
+                    new EventoImediatoDTO(valorPorcentagem, (int) duracaoSegundos);
 
             try {
 
                 System.out.println(urlUFSM + "/cmd/" + eventoFrontDTO.type());
 
-                return restClient.post()
+                String resposta = restClient.post()
                         .uri(urlUFSM + "/cmd/" + eventoFrontDTO.type())
                         .body(eventoImediatoDTO)
                         .retrieve()
                         .body(String.class);
 
+
+                return resposta;
+
             } catch (Exception e) {
+                System.out.println("Erro ao publicar API UFSM");
                 e.printStackTrace();
                 throw e;
             }
@@ -253,11 +322,14 @@ public class EventoService {
             try {
 
                 System.out.println("Endpoint schedule: " + urlUFSM + "/schedule/" + eventoFrontDTO.type());
-                return restClient.post()
+                String resposta = restClient.post()
                         .uri(urlUFSM + "/schedule/" + eventoFrontDTO.type())
                         .body(eventoAgendadoDTO)
                         .retrieve()
                         .body(String.class);
+
+
+                return resposta;
 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -266,10 +338,11 @@ public class EventoService {
         }
     }
 
+    //ok nao mexo
     public String publicarDTOApiEnergy2Go(EventoFrontDTO eventoFrontDTO) {
 
         // inversor trabalha com %
-        Double valorPorcentagem = calculoPotenciaParaPorcentage(eventoFrontDTO, idInversorE2G);
+        Double valorPorcentagem = calculoPotenciaParaPorcentagem(eventoFrontDTO, idInversorE2G);
 
         EventoDTOE2G dtoEnergy = new EventoDTOE2G(valorPorcentagem);
 
@@ -285,6 +358,7 @@ public class EventoService {
                     .body(String.class);
 
         } catch (Exception e) {
+            System.out.println("Erro ao publicar API ENERGY");
             e.printStackTrace();
             throw e;
         }
@@ -305,7 +379,54 @@ public class EventoService {
     }
 
 
+    //busco na API para pegar o ID com base na data e tipo evento (tabela chave)
+    public EventoFrontDTO buscarEventoApi(EventoFrontDTO dto) {
 
+        Double valorConvertido = calculoPotenciaParaPorcentagem(dto, idInversorUfsm);
+
+
+        LocalDateTime dataInicialDto = Instant.ofEpochMilli(dto.startTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        LocalDateTime dataFinalDto = Instant.ofEpochMilli(dto.endTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime()
+                .truncatedTo(ChronoUnit.MINUTES);
+
+        String chaveDto = dto.type() + "_" + dataInicialDto + "_" + dataFinalDto;
+
+        EventoFrontDTO[] eventos = buscarEventos();
+
+        for (EventoFrontDTO evento : eventos) {
+
+
+            LocalDateTime dataInicialApi = Instant.ofEpochMilli(evento.startTime())
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime()
+                    .truncatedTo(ChronoUnit.MINUTES);
+
+            LocalDateTime dataFinalApi = Instant.ofEpochMilli(evento.endTime())
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime()
+                    .truncatedTo(ChronoUnit.MINUTES);
+
+            String chaveApi = evento.type() + "_" + dataInicialApi + "_" + dataFinalApi;
+
+            boolean mesmaChave = chaveApi.equals(chaveDto);
+            boolean mesmaPotencia = Math.abs(evento.value() - valorConvertido) < 1;
+
+            if (mesmaChave && mesmaPotencia) {
+                System.out.println("Evento encontrado: " + evento.id());
+                return evento;
+            }
+        }
+
+        throw new RuntimeException("Evento não apareceu na API");
+    }
+
+    //nao mexer pq ta funcionado
     public void importarEventoApiUfsm(){
 
         EventoFrontDTO[] apiDTO = buscarEventos();
@@ -315,24 +436,66 @@ public class EventoService {
             LocalDateTime dataInicial = Instant.ofEpochMilli(dto.startTime())
                     .atZone(ZoneId.systemDefault())
                     .toLocalDateTime()
-                    .withNano(0);
+                    .truncatedTo(ChronoUnit.MINUTES);
 
-            if(inversorEventoRepository.existsByIdApiUFSM(dto.id())){
-                continue;
+            LocalDateTime dataFinal = Instant.ofEpochMilli(dto.endTime())
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime()
+                    .truncatedTo(ChronoUnit.MINUTES);
+
+            double valor = calcularPorcentagemPotencia(dto.value(), idInversorUfsm, dto.type());
+
+            EventoUFSMEntity eventoUfsm = eventoUFSMRepository
+                    .findByIdApi(dto.id())
+                    .orElse(new EventoUFSMEntity());
+
+            eventoUfsm.setIdApi(dto.id());
+            eventoUfsm.setDataInicial(dataInicial);
+            eventoUfsm.setDataFinal(dataFinal);
+            eventoUfsm.setPotencia(valor);
+
+
+            InversorEntity inversor = inversorRepository.findById(idInversorUfsm).orElse(null);
+
+            eventoUfsm.setInversor(inversor);
+
+
+            String chave = dto.type() + "_" + dataInicial + "_" + dataFinal;
+
+            Optional<EventoEntity> eventoOpt = eventoRepository.findByChave(chave);
+
+            EventoEntity evento = eventoOpt.orElseGet(() -> {
+                EventoEntity novo = new EventoEntity();
+                novo.setDataInicial(dataInicial);
+                novo.setDataFinal(dataFinal);
+                novo.setChave(chave);
+                novo.setPotenciaSolicitadaKw(valor);
+                novo.setTipoEventoUFSM(dto.type());
+                return eventoRepository.save(novo);
+            });
+
+            eventoUfsm.setEvento(evento);
+
+            try {
+                eventoUFSMRepository.save(eventoUfsm);
+            } catch (Exception e) {
+                System.out.println("Erro ao salvar: " + e.getMessage());
+                throw new RuntimeException(e);
             }
 
 
-            salvarEventoBanco(dto, true);
         }
     }
-    public String deletarEventoAPIJean(String id){
+
+    public String deletarEventoAPIJean(String apiId){
 
         try {
             return restClient.delete()
-                    .uri(urlUFSM + "/" + id)
+                    .uri(urlUFSM + "/events/" + apiId)
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
+            System.out.println("Erro ao deletar: " + e.getMessage());
             e.printStackTrace();
             throw e;
         }
@@ -358,11 +521,39 @@ public class EventoService {
                     .body(String.class);
 
         } catch (Exception e) {
+            System.out.println("Erro ao deletar: " + e.getMessage());
             e.printStackTrace();
             throw e;
         }
 
     }
+
+
+    public void deletarEvento(String apiId) {
+
+
+        EventoUFSMEntity ufsm = eventoUFSMRepository.findByIdApi(apiId)
+                .orElseThrow(() -> new RuntimeException("Evento não encontrado"));
+
+        EventoEntity evento = ufsm.getEvento();
+
+
+        deletarEventoAPIJean(apiId);
+
+        eventoUFSMRepository.delete(ufsm);
+
+
+        EventoEnergy2GoEntity e2g = eventoE2GRepository.findByEvento(evento);
+
+        if (e2g != null) {
+
+            deletarEventoEnergy2Go();
+            eventoE2GRepository.delete(e2g);
+        }
+
+        eventoRepository.delete(evento);
+    }
+
 
     public boolean verificarEvento(long dataInicial, long dataFinal){
         EventoFrontDTO[] eventos = restClient.get()
@@ -386,7 +577,7 @@ public class EventoService {
 
 
     //preciso pq o inversor da UFSM é por % e no input eu mando o valor em watts
-    public Double calculoPotenciaParaPorcentage(EventoFrontDTO dto, Integer idInversor) {
+    public Double calculoPotenciaParaPorcentagem(EventoFrontDTO dto, Integer idInversor) {
 
 
         InversorEntity inversor = inversorRepository.findById(idInversor)
@@ -420,6 +611,9 @@ public class EventoService {
 
     public Double calcularPorcentagemPotencia(Double porcentagem, Integer idInversor, TipoEvento tipo) {
 
+
+        System.out.println("Porcentagem entrada: "+ porcentagem);
+
         InversorEntity inversor = inversorRepository.findById(idInversor)
                 .orElseThrow(() -> new RuntimeException("Inversor não encontrado"));
 
@@ -432,12 +626,24 @@ public class EventoService {
 
             potencia = (porcentagem * valorMaximoDescarga) / 100;
 
+
+            if (potencia > valorMaximoDescarga) {
+                potencia = valorMaximoDescarga;
+            }
+
         } else {
 
-            potencia = (porcentagem * inversor.getPotenciaMaximaW()) / 100;
+            Double potenciaMaxima = inversor.getPotenciaMaximaW();
 
+            potencia = (porcentagem * potenciaMaxima) / 100;
+
+
+            if (potencia > potenciaMaxima) {
+                potencia = potenciaMaxima;
+            }
         }
 
+        System.out.println("*** Porcentagem Potencia: " + potencia);
         return potencia;
     }
 
@@ -467,100 +673,49 @@ public class EventoService {
     }
 
 
-    public List<RespostaBackToFrontDTO> buscarEventosComInversores(){
 
-        List<EventoEntity> eventos = apiRepository.findAll();
-        List<RespostaBackToFrontDTO> resposta = new ArrayList<>();
+    public List<EventosUnificadosDTO> buscarEventosBanco(){
 
-        for(EventoEntity evento : eventos){
 
-            List<InversorEventoEntity> inversoresEvento =
-                    inversorEventoRepository.findByIdIdEvento(evento.getId());
+        List<EventoEntity> eventos = eventoRepository.findAll();
 
-            List<InversoresDTO> inversoresDTO = new ArrayList<>();
+        List<EventosUnificadosDTO> dtos = new ArrayList<>();
 
-            double potenciaTotal = 0.0;
-            String idApiUfsm = null;
+        for (EventoEntity evento : eventos) {
 
-            for(InversorEventoEntity inversorEvento : inversoresEvento){
+            double potenciaUFSM = 0.0;
+            double potenciaEnergy2Go = 0.0;
+            String idAPI= null;
 
-                InversorEntity inversor = inversorRepository
-                        .findById(inversorEvento.getId().getIdInversor())
-                        .orElseThrow();
 
-                double potencia = inversorEvento.getPotenciaEntregueKw();
-
-                inversoresDTO.add(
-                        new InversoresDTO(
-                                inversor.getId(),
-                                inversor.getLocal(),
-                                potencia
-                        )
-                );
-
-                potenciaTotal += potencia;
-
-                if(inversor.getId().equals(idInversorUfsm)){
-                    idApiUfsm = inversorEvento.getIdApiUFSM();
-                }
+            EventoUFSMEntity ufsm = eventoUFSMRepository.findByEvento(evento);
+            if (ufsm != null) {
+                potenciaUFSM = ufsm.getPotencia();
+                idAPI = ufsm.getIdApi();
             }
 
-            resposta.add(
-                    new RespostaBackToFrontDTO(
-                            evento.getId(),
-                            idApiUfsm,
-                            potenciaTotal,
-                            evento.getTipoEventoUFSM(),
-                            evento.getDataInicial(),
-                            evento.getDataFinal(),
-                            inversoresDTO
-                    )
+
+            EventoEnergy2GoEntity e2g = eventoE2GRepository.findByEvento(evento);
+            if (e2g != null) {
+                potenciaEnergy2Go = e2g.getPotencia();
+            }
+
+            double total = potenciaUFSM + potenciaEnergy2Go;
+
+            EventosUnificadosDTO unificado = new EventosUnificadosDTO(
+                    evento.getId(),
+                    total,
+                    evento.getTipoEventoUFSM(),
+                    evento.getDataInicial().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                    evento.getDataFinal().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                    idAPI
+
             );
+
+            dtos.add(unificado);
         }
 
-        return resposta;
+        return dtos;
     }
 
-    //criar a lista junto para o front com os dois inverosres + potencia
-//    public List<RespostaBackToFrontDTO> buscarEventosComInversores(){
-//
-//
-//        List<RespostaBackToFrontDTO> respostaParaFront = new ArrayList<>();
-//
-//        List<EventoEntity> eventosVindosDoBanco = apiRepository.findAll();
-//
-//
-//
-//
-//        for(EventoEntity evento : eventosVindosDoBanco){
-//
-//            List<InversoresDTO> inversoresDTO = new ArrayList<>();
-//
-//            List<InversorEventoEntity> inversoresEvento =
-//                    inversorEventoRepository.findByIdIdEvento(evento.getId());
-//
-//            for(InversorEventoEntity inversorEvento : inversoresEvento){
-//
-//                InversorEntity inversor = inversorRepository.findById(inversorEvento.getId().getIdInversor())
-//                        .orElseThrow();
-//
-//                InversoresDTO inversorDTO = new InversoresDTO(
-//                       inversor.getId(), inversor.getLocal(), inversorEvento.getPotenciaEntregueKw());
-//
-//                inversoresDTO.add(inversorDTO);
-//            }
-//
-//            RespostaBackToFrontDTO respostaEvento = new RespostaBackToFrontDTO(
-//                    evento.getId(),
-//                    evento.getPotenciaSolicitadaKw(),
-//                    evento.getTipoEventoUFSM(),
-//                    evento.getDataInicial(),
-//                    evento.getDataFinal(),
-//                    inversoresDTO
-//            );
-//
-//            respostaParaFront.add(respostaEvento);
-//        }
-//        return respostaParaFront;
-//    }
 }

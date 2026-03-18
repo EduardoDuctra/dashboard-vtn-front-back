@@ -47,20 +47,21 @@ public class EventoController {
 
     }
 
-    @GetMapping("/events-complete")
-    public ResponseEntity<?> listarEventosCompleto() {
-        return ResponseEntity.ok(service.buscarEventosComInversores());
 
+    @GetMapping("/events-complete")
+    public ResponseEntity<?> buscarEventosBanco(Long idEvento) {
+        return ResponseEntity.ok(service.buscarEventosBanco());
     }
 
 
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<?> deletarEvento(@PathVariable String id){
 
-        service.deletarEventoEnergy2Go();
 
-        return ResponseEntity.ok(service.deletarEventoAPIJean(id));
+    @DeleteMapping("/events/{apiId}")
+    public ResponseEntity<?> deletarEvento(@PathVariable String apiId){
 
+
+        service.deletarEvento(apiId);
+        return ResponseEntity.ok().build();
     }
 }

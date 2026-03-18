@@ -1,0 +1,1 @@
+ALTER TABLE evento_ufsm ADD CONSTRAINT unique_id_api UNIQUE (id_api);

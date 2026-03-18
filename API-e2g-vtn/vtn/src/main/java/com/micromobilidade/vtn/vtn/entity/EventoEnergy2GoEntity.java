@@ -1,0 +1,36 @@
+package com.micromobilidade.vtn.vtn.entity;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "evento_energy2go")
+@Getter
+@Setter
+public class EventoEnergy2GoEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer id;
+
+    @ManyToOne
+    @JoinColumn(name = "id_evento", nullable = false)
+    private EventoEntity evento;
+
+    @ManyToOne
+    @JoinColumn(name = "id_inversor", nullable = false)
+    private InversorEntity inversor;
+
+
+    @Column(name = "data_inicial")
+    private LocalDateTime dataInicial;
+
+    @Column(name = "data_final")
+    private LocalDateTime dataFinal;
+
+    @Column(name = "potencia")
+    private Double potencia;
+}

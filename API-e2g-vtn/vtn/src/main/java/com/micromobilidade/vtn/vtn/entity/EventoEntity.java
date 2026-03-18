@@ -32,6 +32,9 @@ public class EventoEntity {
     @Enumerated(EnumType.STRING)
     private TipoEvento tipoEventoUFSM;
 
+    @Column(name = "chave")
+    private String chave;
+
 
 }
 
