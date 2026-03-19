@@ -72,7 +72,6 @@ export class DashboardVtnComponent {
   statusAtivo = false;
   horasReducao: number | null = null;
 
-  // potenciaMaximaInversor = environment.estacao.potenciaMaximaInversor;
   potenciaAtual: number | null = null;
 
   type = TipoEvento.limit_charge;
@@ -80,10 +79,6 @@ export class DashboardVtnComponent {
 
   @ViewChild(GraficoHistoricoComponent)
   grafico!: GraficoHistoricoComponent;
-
-  // capacidadeBateria = environment.estacao.capacidadeBateria;
-  // quantidadeBaterias = environment.estacao.quantidadeBaterias;
-  // potenciaMaximaDescarga = environment.estacao.potenciaMaximaDescarga;
 
   tipoEventoAtivo: String | null = null;
 
@@ -157,39 +152,33 @@ export class DashboardVtnComponent {
 
     let valorFinal: number;
 
-    // if (this.type === TipoEvento.inject) {
-    //   valorFinal = this.calculoPotenciaDisponivel(valorDigitado);
-    // } else {
-    //   valorFinal = this.potenciaExibida(valorDigitado);
-    // }
-
     valorFinal = valorDigitado;
 
-    const vtnDTO: EventoDTO = {
+    const eventoDTO: EventoDTO = {
       type: this.type,
       value: valorFinal,
       startTime: inicio.getTime(),
       endTime: fim.getTime(),
     };
 
-    console.log('DTO:', vtnDTO);
+    console.log('DTO:', eventoDTO);
 
-    this.vtnService.criarEvento(vtnDTO).subscribe({
+    this.vtnService.criarEvento(eventoDTO).subscribe({
       next: (res) => {
-        console.log('Evento criado com sucesso:', res);
+        console.log('Sucesso ao criar evento:', res);
 
         this.formReducao.reset();
 
-        setTimeout(() => {
-          location.reload();
-        }, 5000);
+        this.getEventos();
       },
       error: (err) => {
-        if (err.status === 409) {
-          alert('Já existe um evento agendado nesse intervalo.');
-        } else {
-          alert('Erro ao criar evento.');
+        if (err.status === 409 || err.status === 400) {
+          alert(err.error.message);
         }
+
+        this.getEventos();
+
+        console.log('Erro:', err);
       },
     });
 
@@ -204,6 +193,8 @@ export class DashboardVtnComponent {
   getEventos() {
     this.vtnService.buscarEventos().subscribe({
       next: (res) => {
+        console.log('Eventos recebidos da API:', res);
+
         this.eventos = res;
 
         this.verificarEventosAtivos();
@@ -231,6 +222,7 @@ export class DashboardVtnComponent {
       this.statusAtivo = true;
       this.tipoEventoAtivo = this.eventoAtivo.type;
       this.dataFim = new Date(this.eventoAtivo.endTime);
+      this.potenciaAtual = this.eventoAtivo.value;
 
       this.monitorarStatus();
     } else {
@@ -240,18 +232,6 @@ export class DashboardVtnComponent {
       this.potenciaAtual = null;
     }
   }
-  // calcularPotenciaReal(porcentagem: number) {
-  //   const potenciaMaximaEstacao =
-  //     this.potenciaMaximaDescarga * this.quantidadeBaterias;
-
-  //   return (porcentagem / 100) * potenciaMaximaEstacao;
-  // }
-  // potenciaExibida(potenciaSolicitada: number): number {
-  //   if (potenciaSolicitada > this.potenciaMaximaInversor) {
-  //     return this.potenciaMaximaInversor;
-  //   }
-  //   return potenciaSolicitada;
-  // }
 
   monitorarStatus() {
     if (!this.dataFim) {
@@ -276,25 +256,12 @@ export class DashboardVtnComponent {
     }, tempoRestante);
   }
 
-  // calculoPotenciaDisponivel(potencia: number) {
-  //   const potenciaMaximaEstacao =
-  //     this.potenciaMaximaDescarga * this.quantidadeBaterias;
-
-  //   let porcentagemPotencia = (potencia * 100) / potenciaMaximaEstacao;
-
-  //   if (porcentagemPotencia > 100) {
-  //     porcentagemPotencia = 100;
-  //   }
-
-  //   return porcentagemPotencia;
-  // }
-
   deletarEventoAtual() {
-    if (!this.eventoAtivo?.id) {
+    if (!this.eventoAtivo?.apiId) {
       return;
     }
 
-    this.vtnService.deletarEvento(this.eventoAtivo.id).subscribe({
+    this.vtnService.deletarEvento(this.eventoAtivo.apiId).subscribe({
       next: () => {
         this.getEventos();
       },

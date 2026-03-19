@@ -42,7 +42,7 @@ export class GraficoHistoricoComponent implements OnChanges {
     );
 
     const categorias = ordenado.map((e: any) => {
-      const data = new Date(e.dataInicial);
+      const data = new Date(e.startTime);
 
       const dataFormatada = data.toLocaleDateString('pt-BR');
       const horaFormatada = data.toLocaleTimeString('pt-BR', {
@@ -54,7 +54,7 @@ export class GraficoHistoricoComponent implements OnChanges {
     });
 
     const solicitacoes = ordenado.map((e: any) => {
-      const valorPotencia = e.potencialTotal / 1000;
+      const valorPotencia = e.value / 1000;
 
       if (e.type === 'inject') {
         return -valorPotencia;
@@ -154,8 +154,9 @@ export class GraficoHistoricoComponent implements OnChanges {
 
         series: [
           {
-            name: 'Valor de Potência',
+            name: 'Fluxo de Potência',
             type: 'line',
+            color: '#000000',
             data: [],
             zoneAxis: 'y',
             zones: [
@@ -167,75 +168,4 @@ export class GraficoHistoricoComponent implements OnChanges {
       },
     );
   }
-  // renderizarGrafico() {
-  //   const momentoAtual = new Date();
-
-  //   const eventosPassados = this.eventos.filter((e) => {
-  //     return new Date(e.dataInicial) <= momentoAtual;
-  //   });
-
-  //   //ordenado pela data os eventos que já aconteceram
-  //   const ordenado = [...eventosPassados].sort(
-  //     (a, b) =>
-  //       new Date(a.dataInicial).getTime() - new Date(b.dataInicial).getTime(),
-  //   );
-
-  //   //converte o time para dia e horas
-  //   //tirei os segundos
-  //   const categorias = ordenado.map((e: any) => {
-  //     const data = new Date(e.dataInicial);
-
-  //     const dataFormatada = data.toLocaleDateString('pt-BR');
-  //     const horaFormatada = data.toLocaleTimeString('pt-BR', {
-  //       hour: '2-digit',
-  //       minute: '2-digit',
-  //     });
-
-  //     return `${dataFormatada} ${horaFormatada}`;
-  //   });
-
-  //   const solicitacoes = ordenado.map((e: any) => {
-  //     const valorPotencia = e.potencialTotal / 1000;
-
-  //     if (e.type === 'inject') {
-  //       return -valorPotencia;
-  //     }
-
-  //     return e.potencialTotal / 1000;
-  //   });
-
-  //   Highcharts.charts.forEach((c) => c?.destroy());
-
-  //   Highcharts.chart(this.el.nativeElement.querySelector('#grafico'), {
-  //     chart: { type: 'line' },
-
-  //     title: { text: 'Histórico de Reduções' },
-
-  //     xAxis: {
-  //       categories: categorias,
-  //     },
-
-  //     yAxis: {
-  //       title: { text: 'Potência (kW)' },
-  //     },
-
-  //     series: [
-  //       {
-  //         name: 'Valor de Potência',
-  //         type: 'line',
-  //         data: solicitacoes,
-  //         zoneAxis: 'y',
-  //         zones: [
-  //           {
-  //             value: 0,
-  //             color: CORES.INJECAO,
-  //           },
-  //           {
-  //             color: CORES.REDUCAO,
-  //           },
-  //         ],
-  //       },
-  //     ],
-  //   });
-  // }
 }
