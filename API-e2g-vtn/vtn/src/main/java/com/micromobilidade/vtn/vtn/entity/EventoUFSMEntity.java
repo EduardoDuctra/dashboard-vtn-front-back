@@ -1,5 +1,6 @@
 package com.micromobilidade.vtn.vtn.entity;
 
+import com.micromobilidade.vtn.vtn.model.StatusEvento;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -35,4 +36,8 @@ public class EventoUFSMEntity {
 
     @Column(name = "potencia")
     private Double potencia;
+
+    @Column(name = "status")
+    @Enumerated(EnumType.STRING)
+    private StatusEvento status;
 }

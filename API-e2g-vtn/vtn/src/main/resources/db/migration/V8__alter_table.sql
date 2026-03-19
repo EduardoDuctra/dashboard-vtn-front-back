@@ -1,0 +1,1 @@
+alter table evento_ufsm add column status varchar(50) default 'ATIVO';

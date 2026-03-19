@@ -12,6 +12,7 @@ import com.micromobilidade.vtn.vtn.repository.InversorRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -20,12 +21,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class EventoService {
@@ -162,6 +162,7 @@ public class EventoService {
         novoEvento.setPotenciaSolicitadaKw(dto.value());
         novoEvento.setTipoEventoUFSM(dto.type());
         novoEvento.setChave(chave);
+        novoEvento.setStatus(StatusEvento.ATIVO);
 
         try {
             return eventoRepository.save(novoEvento);
@@ -199,6 +200,7 @@ public class EventoService {
         eventoUFSMEntity.setIdApi(dto.id());
         eventoUFSMEntity.setInversor(inversor);
         eventoUFSMEntity.setPotencia(valorPotenciaW);
+        eventoUFSMEntity.setStatus(StatusEvento.ATIVO);
 
 
         try {
@@ -234,6 +236,7 @@ public class EventoService {
         eventoE2G.setDataFinal(dataFinal);
         eventoE2G.setPotencia(valorPotenciaW);
         eventoE2G.setInversor(inversor);
+        eventoE2G.setStatus(StatusEvento.ATIVO);
 
         try {
             eventoE2GRepository.save(eventoE2G);
@@ -453,6 +456,7 @@ public class EventoService {
             eventoUfsm.setDataInicial(dataInicial);
             eventoUfsm.setDataFinal(dataFinal);
             eventoUfsm.setPotencia(valor);
+            eventoUfsm.setStatus(StatusEvento.ATIVO);
 
 
             InversorEntity inversor = inversorRepository.findById(idInversorUfsm).orElse(null);
@@ -471,6 +475,7 @@ public class EventoService {
                 novo.setChave(chave);
                 novo.setPotenciaSolicitadaKw(valor);
                 novo.setTipoEventoUFSM(dto.type());
+                novo.setStatus(StatusEvento.ATIVO);
                 return eventoRepository.save(novo);
             });
 
@@ -507,6 +512,7 @@ public class EventoService {
 
 
 
+
         EventoDTOE2G dtoEnergy = new EventoDTOE2G(0.0);
 
 
@@ -532,26 +538,65 @@ public class EventoService {
     public void deletarEvento(String apiId) {
 
 
+        System.out.println("ID APi no deletar: " + apiId);
+
         EventoUFSMEntity ufsm = eventoUFSMRepository.findByIdApi(apiId)
                 .orElseThrow(() -> new RuntimeException("Evento não encontrado"));
 
         EventoEntity evento = ufsm.getEvento();
 
+        System.out.println("ID do evento: " + evento.getId());
 
-        deletarEventoAPIJean(apiId);
 
-        eventoUFSMRepository.delete(ufsm);
+        try {
+            deletarEventoAPIJean(apiId);
+            ufsm.setStatus(StatusEvento.INATIVO);
+
+            eventoUFSMRepository.save(ufsm);
+
+        } catch (Exception e) {
+            System.out.println("Erro ao deletar no repositório da UFSM: " + e.getMessage());
+            throw new RuntimeException(e);
+        }
 
 
         EventoEnergy2GoEntity e2g = eventoE2GRepository.findByEvento(evento);
 
-        if (e2g != null) {
+        LocalDateTime agora = LocalDateTime.now();
+        System.out.println("Agora: " + agora);
+        System.out.println("Hora inicial: " + ufsm.getDataInicial());
 
-            deletarEventoEnergy2Go();
-            eventoE2GRepository.delete(e2g);
+        if (e2g != null) {
+            e2g.setStatus(StatusEvento.INATIVO);
         }
 
-        eventoRepository.delete(evento);
+        try {
+            if (agora.isBefore(ufsm.getDataInicial())) {
+
+                if (e2g != null) {
+
+                    eventoE2GRepository.save(e2g);
+                }
+
+            } else {
+
+                System.out.println("Entrou aqui");
+
+                deletarEventoEnergy2Go();
+
+                if (e2g != null) {
+                    eventoE2GRepository.save(e2g);
+                }
+            }
+
+        } catch (Exception e) {
+            System.out.println("Erro ao deletar no repositório da energy: " + e.getMessage());
+            throw new RuntimeException(e);
+        }
+
+        evento.setStatus(StatusEvento.INATIVO);
+        eventoRepository.save(evento);
+
     }
 
 
@@ -673,7 +718,6 @@ public class EventoService {
     }
 
 
-
     public List<EventosUnificadosDTO> buscarEventosBanco(){
 
 
@@ -683,20 +727,31 @@ public class EventoService {
 
         for (EventoEntity evento : eventos) {
 
-            double potenciaUFSM = 0.0;
-            double potenciaEnergy2Go = 0.0;
-            String idAPI= null;
-
-
             EventoUFSMEntity ufsm = eventoUFSMRepository.findByEvento(evento);
-            if (ufsm != null) {
-                potenciaUFSM = ufsm.getPotencia();
-                idAPI = ufsm.getIdApi();
-            }
-
+            boolean ufsmAtivo = ufsm != null && ufsm.getStatus() == StatusEvento.ATIVO;
 
             EventoEnergy2GoEntity e2g = eventoE2GRepository.findByEvento(evento);
-            if (e2g != null) {
+            boolean energyAtivo = e2g != null && e2g.getStatus() == StatusEvento.ATIVO;
+
+
+            if (!ufsmAtivo && !energyAtivo) {
+                continue;
+            }
+
+            double potenciaUFSM = 0.0;
+            double potenciaEnergy2Go = 0.0;
+            String idAPI = null;
+
+            if (ufsm != null) {
+
+                idAPI = ufsm.getIdApi();
+
+                if (ufsm.getStatus() == StatusEvento.ATIVO) {
+                    potenciaUFSM = ufsm.getPotencia();
+                }
+            }
+
+            if (energyAtivo) {
                 potenciaEnergy2Go = e2g.getPotencia();
             }
 
@@ -708,8 +763,8 @@ public class EventoService {
                     evento.getTipoEventoUFSM(),
                     evento.getDataInicial().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
                     evento.getDataFinal().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
-                    idAPI
-
+                    idAPI,
+                    evento.getStatus().toString()
             );
 
             dtos.add(unificado);
@@ -717,5 +772,87 @@ public class EventoService {
 
         return dtos;
     }
+
+    //sincronia a cada 30s -> pode apagar dados na api
+    @Scheduled(fixedRate = 30000)
+    public void sincronizar() {
+        sincronizarAPI();
+    }
+
+    public void sincronizarAPI() {
+
+        EventoFrontDTO[] eventosApi = buscarEventos();
+
+        List<EventoUFSMEntity> eventosBanco = eventoUFSMRepository.findAll();
+
+        Set<String> idsApi = Arrays.stream(eventosApi)
+                .map(EventoFrontDTO::id)
+                .collect(Collectors.toSet());
+
+        LocalDateTime agora = LocalDateTime.now();
+
+        for (EventoUFSMEntity banco : eventosBanco) {
+
+            if (banco.getIdApi() == null) {
+                continue;
+            }
+
+            boolean existeNaApi = idsApi.contains(banco.getIdApi());
+
+            if (!existeNaApi && banco.getStatus() == StatusEvento.ATIVO) {
+
+                System.out.println("Evento removido da API: " + banco.getIdApi());
+
+                banco.setStatus(StatusEvento.INATIVO);
+                eventoUFSMRepository.save(banco);
+            }
+        }
+    }
+
+//    public List<EventosUnificadosDTO> buscarEventosBanco(){
+//
+//
+//        List<EventoEntity> eventos = eventoRepository.findAll();
+//
+//        List<EventosUnificadosDTO> dtos = new ArrayList<>();
+//
+//        for (EventoEntity evento : eventos) {
+//
+//            double potenciaUFSM = 0.0;
+//            double potenciaEnergy2Go = 0.0;
+//            String idAPI= null;
+//
+//
+//            EventoUFSMEntity ufsm = eventoUFSMRepository.findByEvento(evento);
+//            if (ufsm != null) {
+//                potenciaUFSM = ufsm.getPotencia();
+//                idAPI = ufsm.getIdApi();
+//            }
+//
+//
+//            EventoEnergy2GoEntity e2g = eventoE2GRepository.findByEvento(evento);
+//
+//            if (e2g != null) {
+//                potenciaEnergy2Go = e2g.getPotencia();
+//            }
+//
+//            double total = potenciaUFSM + potenciaEnergy2Go;
+//
+//            EventosUnificadosDTO unificado = new EventosUnificadosDTO(
+//                    evento.getId(),
+//                    total,
+//                    evento.getTipoEventoUFSM(),
+//                    evento.getDataInicial().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+//                    evento.getDataFinal().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+//                    idAPI,
+//                    evento.getStatus().toString()
+//
+//            );
+//
+//            dtos.add(unificado);
+//        }
+//
+//        return dtos;
+//    }
 
 }

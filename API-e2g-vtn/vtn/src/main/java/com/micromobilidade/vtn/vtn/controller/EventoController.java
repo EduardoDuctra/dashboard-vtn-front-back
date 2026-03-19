@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/vtn")
 public class EventoController {
@@ -26,9 +28,18 @@ public class EventoController {
 
         boolean conflito = service.verificarEvento(dataInicial, dataFinal);
 
+        //agora + tolerancia 20s
+        long agora = System.currentTimeMillis() - 10000;
+
+
+        if(dto.startTime() < agora){
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Data invalida!"));
+        }
+
         if(conflito){
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body("Evento já existente nesse intervalo de tempo");
+                    .body(Map.of("message","Evento já existente nesse intervalo de tempo"));
         }
       else {
             System.out.println("Valor:" + dto.value());
@@ -37,7 +48,7 @@ public class EventoController {
 
 
             service.cadastrarEventoBanco(dto);
-            return ResponseEntity.ok("Evento criado com sucesso");
+            return ResponseEntity.ok().build();
         }
     }
 
@@ -49,7 +60,7 @@ public class EventoController {
 
 
     @GetMapping("/events-complete")
-    public ResponseEntity<?> buscarEventosBanco(Long idEvento) {
+    public ResponseEntity<?> buscarEventosBanco() {
         return ResponseEntity.ok(service.buscarEventosBanco());
     }
 

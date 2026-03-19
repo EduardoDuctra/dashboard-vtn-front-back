@@ -1,5 +1,6 @@
 package com.micromobilidade.vtn.vtn.entity;
 
+import com.micromobilidade.vtn.vtn.model.StatusEvento;
 import com.micromobilidade.vtn.vtn.model.TipoEvento;
 import com.micromobilidade.vtn.vtn.model.TipoEvento;
 import jakarta.persistence.*;
@@ -34,6 +35,10 @@ public class EventoEntity {
 
     @Column(name = "chave")
     private String chave;
+
+    @Column(name = "status")
+    @Enumerated(EnumType.STRING)
+    private StatusEvento status;
 
 
 }
