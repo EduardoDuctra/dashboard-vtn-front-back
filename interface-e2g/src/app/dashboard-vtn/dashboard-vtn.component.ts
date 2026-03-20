@@ -27,6 +27,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { TipoEvento } from '../shared/tipoEvento';
 import { environment } from '../../environments/environment';
 import { EventoUnificado } from '../model/EventoUnificado';
+import { interval } from 'rxjs';
 
 @Component({
   selector: 'app-dashboard-vtn',
@@ -91,6 +92,10 @@ export class DashboardVtnComponent {
 
   ngOnInit() {
     this.getEventos();
+
+    interval(5000).subscribe(() => {
+      this.getEventos();
+    });
   }
 
   abrirTabelaAgendamentos() {

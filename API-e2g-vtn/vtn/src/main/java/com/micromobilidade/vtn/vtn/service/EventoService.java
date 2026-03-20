@@ -110,6 +110,9 @@ public class EventoService {
         EventoEntity evento = null;
 
         try {
+
+            Thread.sleep(5000);
+
             //salvar em evento
             evento = salvarEventoBanco(eventoFrontDTO);
         } catch (Exception e) {
@@ -214,6 +217,8 @@ public class EventoService {
     @Transactional
     public void salvarEventoEnergy2Go(EventoEntity evento, EventoFrontDTO eventoFrontDTO) {
 
+        System.out.println("SALVANDO ENERGY: evento " + evento.getId());
+
         LocalDateTime dataInicial = Instant.ofEpochMilli(eventoFrontDTO.startTime())
                 .atZone(ZoneId.systemDefault())
                 .toLocalDateTime()
@@ -230,7 +235,15 @@ public class EventoService {
 
         double valorPotenciaW = calculoInversor(inversor.getId(), eventoFrontDTO.value(), eventoFrontDTO.type());
 
-        EventoEnergy2GoEntity eventoE2G = new EventoEnergy2GoEntity();
+        EventoEnergy2GoEntity eventoE2G = eventoE2GRepository.findByEvento(evento);
+
+        if (eventoE2G == null) {
+            System.out.println("Criando novo registro Energy");
+            eventoE2G = new EventoEnergy2GoEntity();
+        } else {
+            System.out.println("Atualizando registro existente Energy");
+        }
+
         eventoE2G.setEvento(evento);
         eventoE2G.setDataInicial(dataInicial);
         eventoE2G.setDataFinal(dataFinal);
@@ -570,19 +583,25 @@ public class EventoService {
             e2g.setStatus(StatusEvento.INATIVO);
         }
 
+        boolean jaComecou = agora.isAfter(ufsm.getDataInicial());
+        boolean aindaNaoTerminou = agora.isBefore(ufsm.getDataFinal());
+
+
+
         try {
-            if (agora.isBefore(ufsm.getDataInicial())) {
+            if (jaComecou && aindaNaoTerminou) {
+
+                System.out.println("Evento em execução, cancelando na Energy");
+
+                deletarEventoEnergy2Go();
 
                 if (e2g != null) {
-
                     eventoE2GRepository.save(e2g);
                 }
 
             } else {
 
-                System.out.println("Entrou aqui");
-
-                deletarEventoEnergy2Go();
+                System.out.println("Evento NÃO está em execução, não precisa cancelar na Energy");
 
                 if (e2g != null) {
                     eventoE2GRepository.save(e2g);
@@ -695,27 +714,86 @@ public class EventoService {
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     //preciso do EventoFrontDTO -> pq faz as conversões dps em publicarDTOApiEnergy2Go
+
     public String agendarEventoEnergy(EventoFrontDTO dto){
 
-        LocalDateTime dataInicialConvertida = Instant.ofEpochMilli(dto.startTime())
+        LocalDateTime inicio = Instant.ofEpochMilli(dto.startTime())
                 .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
-        long atraso = Duration.between(LocalDateTime.now(), dataInicialConvertida).toMillis();
+        LocalDateTime fim = Instant.ofEpochMilli(dto.endTime())
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
-        if(atraso < 0){
-            atraso = 0;
+        long atrasoInicio = Duration.between(LocalDateTime.now(), inicio).toMillis();
+        long atrasoFim = Duration.between(LocalDateTime.now(), fim).toMillis();
+
+        if(atrasoInicio < 0){
+            atrasoInicio = 0;
         }
+
+        if(atrasoFim < 0){
+            atrasoFim = 0;
+        }
+
 
         scheduler.schedule(() -> {
             try {
+                System.out.println("Iniciando evento Energy");
                 publicarDTOApiEnergy2Go(dto);
             } catch (Exception e) {
-                System.out.println("Erro ao executar evento Energy2Go: " + e.getMessage());
+                System.out.println("Erro ao iniciar evento Energy: " + e.getMessage());
             }
-        }, atraso, TimeUnit.MILLISECONDS);
+        }, atrasoInicio, TimeUnit.MILLISECONDS);
+
+
+        scheduler.schedule(() -> {
+            try {
+                System.out.println("Finalizando evento Energy");
+                deletarEventoEnergy2Go();
+            } catch (Exception e) {
+                System.out.println("Erro ao finalizar evento Energy: " + e.getMessage());
+            }
+        }, atrasoFim, TimeUnit.MILLISECONDS);
 
         return "Evento agendado com sucesso";
     }
+//    public String agendarEventoEnergy(EventoFrontDTO dto){
+//
+//        LocalDateTime dataInicialConvertida = Instant.ofEpochMilli(dto.startTime())
+//                .atZone(ZoneId.systemDefault()).toLocalDateTime();
+//
+//
+//        LocalDateTime dataFinalConvertida = Instant.ofEpochMilli(dto.endTime())
+//                .atZone(ZoneId.systemDefault()).toLocalDateTime();
+//
+//
+//
+//        long atraso = Duration.between(LocalDateTime.now(), dataInicialConvertida).toMillis();
+//        long duracao = Duration.between(LocalDateTime.now(), dataFinalConvertida).toMillis();
+//
+//        if(atraso < 0){
+//            atraso = 0;
+//        }
+//
+//        scheduler.schedule(() -> {
+//            try {
+//                publicarDTOApiEnergy2Go(dto);
+//            } catch (Exception e) {
+//                System.out.println("Erro ao executar evento Energy2Go: " + e.getMessage());
+//            }
+//        }, atraso, TimeUnit.MILLISECONDS);
+//
+//        scheduler.schedule(() -> {
+//
+//            try {
+//                System.out.println("Finalizando evento Energy");
+//                deletarEventoEnergy2Go();
+//            } catch (Exception e) {
+//                System.out.println("Erro ao finalizar evento Energy: " + e.getMessage());
+//            }
+//        }, duracao, TimeUnit.MILLISECONDS);
+//
+//        return "Evento agendado com sucesso";
+//    }
 
 
     public List<EventosUnificadosDTO> buscarEventosBanco(){
@@ -773,8 +851,8 @@ public class EventoService {
         return dtos;
     }
 
-    //sincronia a cada 30s -> pode apagar dados na api
-    @Scheduled(fixedRate = 30000)
+    //sincronia a cada 15s -> pode apagar dados na api
+    @Scheduled(fixedRate = 15000)
     public void sincronizar() {
         sincronizarAPI();
     }
@@ -809,50 +887,5 @@ public class EventoService {
         }
     }
 
-//    public List<EventosUnificadosDTO> buscarEventosBanco(){
-//
-//
-//        List<EventoEntity> eventos = eventoRepository.findAll();
-//
-//        List<EventosUnificadosDTO> dtos = new ArrayList<>();
-//
-//        for (EventoEntity evento : eventos) {
-//
-//            double potenciaUFSM = 0.0;
-//            double potenciaEnergy2Go = 0.0;
-//            String idAPI= null;
-//
-//
-//            EventoUFSMEntity ufsm = eventoUFSMRepository.findByEvento(evento);
-//            if (ufsm != null) {
-//                potenciaUFSM = ufsm.getPotencia();
-//                idAPI = ufsm.getIdApi();
-//            }
-//
-//
-//            EventoEnergy2GoEntity e2g = eventoE2GRepository.findByEvento(evento);
-//
-//            if (e2g != null) {
-//                potenciaEnergy2Go = e2g.getPotencia();
-//            }
-//
-//            double total = potenciaUFSM + potenciaEnergy2Go;
-//
-//            EventosUnificadosDTO unificado = new EventosUnificadosDTO(
-//                    evento.getId(),
-//                    total,
-//                    evento.getTipoEventoUFSM(),
-//                    evento.getDataInicial().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
-//                    evento.getDataFinal().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
-//                    idAPI,
-//                    evento.getStatus().toString()
-//
-//            );
-//
-//            dtos.add(unificado);
-//        }
-//
-//        return dtos;
-//    }
 
 }

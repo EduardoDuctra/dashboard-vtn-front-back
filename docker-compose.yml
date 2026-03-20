@@ -1,11 +1,27 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:15
+    container_name: vtn-postgres
+    environment:
+      POSTGRES_DB: vtn_ufsm_e2g
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2016010124
+    ports:
+      - '5007:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build: ./API-e2g-vtn/vtn
     container_name: vtn-backend
     ports:
       - '5006:8080'
+    depends_on:
+      - postgres
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
 
   frontend:
     build: ./interface-e2g
@@ -14,3 +30,23 @@ services:
       - '5005:80'
     depends_on:
       - backend
+
+volumes:
+  postgres_data:
+
+# version: '3.8'
+
+# services:
+#   backend:
+#     build: ./API-e2g-vtn/vtn
+#     container_name: vtn-backend
+#     ports:
+#       - '5006:8080'
+
+#   frontend:
+#     build: ./interface-e2g
+#     container_name: vtn-frontend
+#     ports:
+#       - '5005:80'
+#     depends_on:
+#       - backend
