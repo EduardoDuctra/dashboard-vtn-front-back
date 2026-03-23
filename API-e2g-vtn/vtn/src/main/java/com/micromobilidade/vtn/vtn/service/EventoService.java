@@ -569,7 +569,6 @@ public class EventoService {
 
         } catch (Exception e) {
             System.out.println("Erro ao deletar no repositório da UFSM: " + e.getMessage());
-            throw new RuntimeException(e);
         }
 
 
@@ -610,7 +609,6 @@ public class EventoService {
 
         } catch (Exception e) {
             System.out.println("Erro ao deletar no repositório da energy: " + e.getMessage());
-            throw new RuntimeException(e);
         }
 
         evento.setStatus(StatusEvento.INATIVO);
